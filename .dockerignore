@@ -1,0 +1,38 @@
+# Keep the build context small and free of secrets
+.git
+.gitignore
+
+# Test and coverage artifacts
+coverage.out
+coverage.html
+*.test
+*.out
+*.prof
+
+# Frontend
+frontend/node_modules
+frontend/.next
+frontend/tsconfig.tsbuildinfo
+frontend/coverage
+
+# Build output
+bin/
+
+# Local certificates and secrets
+certs/*.key
+certs/*.csr
+certs/*.srl
+*.crt
+*.key
+*.pem
+
+# Logs and OS noise
+*.log
+.DS_Store
+*.swp
+.idea/
+.vscode/
+
+# Local environment
+.env
+.env.*

@@ -1,0 +1,150 @@
+services:
+  grpc-server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      tags:
+        - grpc-service-with-interceptors:1.0.0
+    image: grpc-service-with-interceptors:1.0.0
+    pull_policy: if_not_present
+    user: "10001:10001"
+    read_only: true
+    init: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
+    ports:
+      - "${E2E_GRPC_PORT:-50051}:50051"
+      - "${E2E_HEALTH_PORT:-8080}:8080"
+      - "${E2E_METRICS_PORT:-9090}:9090"
+    environment:
+      CONFIG_PATH: /app/configs/config.yaml
+      TMPDIR: /tmp/grpc
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET to a long random value}
+      AUTH_API_KEYS: ${AUTH_API_KEYS:-}
+      STORAGE_BACKEND: postgres
+      DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL to the PostgreSQL connection URL}
+      SERVER_MAX_STREAM_MESSAGES: ${SERVER_MAX_STREAM_MESSAGES:-100}
+      SERVER_STREAM_INTERVAL: ${SERVER_STREAM_INTERVAL:-2s}
+    volumes:
+      - ${CERT_DIR:-./certs}:/app/certs:ro
+    tmpfs:
+      - /tmp/grpc:rw,nosuid,nodev,exec,size=64m
+      - /run:rw,nosuid,nodev,size=8m
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1:8080/healthz"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512M
+          pids: 256
+        reservations:
+          cpus: "0.25"
+          memory: 128M
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:17.5-alpine
+    user: "70:70"
+    read_only: true
+    init: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    environment:
+      POSTGRES_DB: grpc_service
+      POSTGRES_USER: grpc_service
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+      PGDATA: /var/lib/postgresql/data/pgdata
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U grpc_service -d grpc_service"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    tmpfs:
+      - /run/postgresql:rw,nosuid,nodev,size=16m
+      - /tmp:rw,nosuid,nodev,size=32m
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512M
+          pids: 256
+        reservations:
+          cpus: "0.25"
+          memory: 128M
+    restart: unless-stopped
+
+  jaeger:
+    image: jaegertracing/all-in-one:1.69.0
+    profiles: [observability]
+    read_only: true
+    init: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    ports:
+      - "16686:16686"
+      - "4318:4318"
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+    tmpfs:
+      - /tmp:rw,nosuid,nodev,size=64m
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256M
+    restart: unless-stopped
+
+  prometheus:
+    image: prom/prometheus:v3.5.0
+    profiles: [observability]
+    read_only: true
+    init: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    user: "65534:65534"
+    ports:
+      - "9091:9090"
+    volumes:
+      - ./test/deployment/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--web.listen-address=:9090"
+      - "--storage.tsdb.retention.time=2h"
+    tmpfs:
+      - /prometheus:rw,nosuid,nodev,size=128m
+    depends_on:
+      grpc-server:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256M
+        reservations:
+          cpus: "0.1"
+          memory: 64M
+    restart: unless-stopped
+
+volumes:
+  postgres-data:
