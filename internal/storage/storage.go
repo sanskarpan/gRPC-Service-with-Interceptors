@@ -1,0 +1,52 @@
+// Package storage contains repository implementations for the UserService.
+// The service layer depends on this narrow contract so persistence can be
+// tested independently and replaced without leaking database types outward.
+package storage
+
+import (
+	"context"
+	"errors"
+
+	"github.com/example/grpc-service/pkg/pb"
+)
+
+// Repository is the persistence contract used by UserService. Implementations
+// must clone protobuf values at their boundary and return ErrNotFound for
+// missing records. Create enforces maxUsers transactionally where supported.
+// ReadModifyUpdate atomically loads, mutates, and persists a user so callers
+// do not introduce a lost-write race by performing separate Get + Update
+// operations.
+type Repository interface {
+	Create(context.Context, *pb.User, int) error
+	Get(context.Context, string) (*pb.User, error)
+	Update(context.Context, *pb.User) error
+	ReadModifyUpdate(context.Context, string, ReadModifyUpdateFn) (*pb.User, error)
+	Delete(context.Context, string) error
+	Ping(context.Context) error
+	Close() error
+}
+
+// ReadModifyUpdateFn is invoked with the freshly loaded user and may mutate
+// it. The returned error aborts the operation and is propagated to the
+// caller. The pointer is private to the repository; callers must not retain
+// it past the call.
+type ReadModifyUpdateFn func(current *pb.User) error
+
+// ErrNotFound indicates that a requested user does not exist.
+var ErrNotFound = errors.New("user not found")
+
+// ErrCapacity indicates that the configured user limit has been reached.
+var ErrCapacity = errors.New("user capacity reached")
+
+// ErrAlreadyExists indicates that a resource identifier is already stored.
+var ErrAlreadyExists = errors.New("user already exists")
+
+// ErrInvalid indicates a value rejected by the persistence contract.
+var ErrInvalid = errors.New("invalid persisted user")
+
+// ErrUnavailable indicates a persistence dependency failure.
+var ErrUnavailable = errors.New("storage unavailable")
+
+// ErrCircuitOpen indicates the circuit breaker is open and requests are
+// being rejected without attempting the underlying operation.
+var ErrCircuitOpen = errors.New("circuit breaker open")

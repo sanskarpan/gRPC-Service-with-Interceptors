@@ -1,0 +1,27 @@
+global:
+  scrape_interval: 15s
+  scrape_timeout: 10s
+  evaluation_interval: 15s
+  external_labels:
+    monitor: "grpc-service-monitor"
+
+# Load alerting and recording rules for gRPC service health.
+rule_files:
+  - alerting-rules.yml
+
+scrape_configs:
+  - job_name: 'grpc-service'
+    metrics_path: /metrics
+    scheme: http
+    scrape_interval: 15s
+    scrape_timeout: 10s
+    static_configs:
+      - targets:
+          - 'grpc-server:9090'
+        labels:
+          service: grpc-service
+          env: local
+
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
