@@ -1,0 +1,78 @@
+# Non-secret baseline configuration. Inject JWT_SECRET or AUTH_API_KEYS at runtime.
+server:
+  host: "0.0.0.0"
+  port: 50051
+  max_conns: 100
+  timeout: 30s
+  max_recv_message_mb: 4
+  max_send_message_mb: 4
+  max_users: 10000
+  max_stream_messages: 100
+  max_string_bytes: 4096
+  stream_interval: 2s
+  rate_limit_per_second: 100
+  rate_limit_burst: 200
+  per_client_rate_limit_per_second: 50
+  per_client_rate_limit_burst: 100
+
+tls:
+  enabled: true
+  cert_file: "certs/server.crt"
+  key_file: "certs/server.key"
+  ca_file: "certs/ca.crt"
+  client_cert_file: "certs/client.crt"
+  client_key_file: "certs/client.key"
+  mtls:
+    enabled: false
+    client_ca_file: "certs/ca.crt"
+
+auth:
+  jwt_secret: ""
+  api_keys: []
+
+logging:
+  level: "info"
+  format: "json"
+
+tracing:
+  enabled: false
+  endpoint: "http://jaeger:4318/v1/traces"
+  service_name: "grpc-service"
+
+metrics:
+  enabled: true
+  port: 9090
+
+health:
+  port: 8080
+
+gateway:
+  enabled: false
+  port: 8081
+
+storage:
+  backend: "memory"
+  url: ""
+  max_open_conns: 10
+  max_idle_conns: 5
+  conn_max_lifetime: 5m
+  ping_timeout: 5s
+  retry_attempts: 3
+  retry_backoff: 250ms
+  retry_max_backoff: 5s
+  cache:
+    enabled: false
+    ttl: 30s
+  circuit_breaker:
+    enabled: false
+    failure_threshold: 5
+    success_threshold: 2
+    open_timeout: 30s
+    max_half_open_requests: 1
+
+reflection: false
+
+client:
+  address: "localhost:50051"
+  server_name: "localhost"
+  auth_token: ""
