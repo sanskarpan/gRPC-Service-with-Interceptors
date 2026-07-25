@@ -1,0 +1,29 @@
+#!/bin/sh
+. "$(dirname "$0")/_/husky.sh"
+
+# Run Go format check
+echo "Running gofumpt..."
+if command -v gofumpt >/dev/null 2>&1; then
+  unformatted=$(gofumpt -l . 2>/dev/null | grep -v vendor/)
+  if [ -n "$unformatted" ]; then
+    echo "The following files are not gofumpt-formatted:"
+    echo "$unformatted"
+    exit 1
+  fi
+fi
+
+# Run go vet on changed packages
+echo "Running go vet..."
+changed_pkgs=$(git diff --cached --name-only --diff-filter=ACM | grep '\.go$' | xargs -I {} dirname {} | sort -u | sed 's/^/.\//' || true)
+if [ -n "$changed_pkgs" ]; then
+  if ! go vet $changed_pkgs 2>/dev/null; then
+    echo "go vet failed"
+    exit 1
+  fi
+fi
+
+# Run golangci-lint if available
+if command -v golangci-lint >/dev/null 2>&1; then
+  echo "Running golangci-lint..."
+  golangci-lint run --timeout=3m ./... 2>/dev/null || true
+fi
