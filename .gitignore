@@ -28,3 +28,11 @@ Thumbs.db
 # Environment
 .env
 .env.local
+
+# Generated binaries
+/server
+
+# Frontend
+frontend/node_modules/
+frontend/.next/
+frontend/out/
