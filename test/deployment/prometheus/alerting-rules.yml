@@ -1,0 +1,125 @@
+# Alerting and recording rules for the gRPC Service.
+# Deploy alongside prometheus.yml. Adjust thresholds to match your SLOs.
+groups:
+  - name: grpc-service-recording
+    interval: 15s
+    rules:
+      # Request rate per method (requests/sec, over 5m window)
+      - record: grpc:requests:rate5m
+        expr: rate(grpc_requests_total[5m])
+      # Error rate per method (errors/sec, over 5m window)
+      - record: grpc:errors:rate5m
+        expr: rate(grpc_errors_total[5m])
+      # Error ratio per method (fraction of requests that error)
+      - record: grpc:errors:ratio5m
+        expr: |
+          sum(rate(grpc_errors_total[5m])) by (method)
+          /
+          max(rate(grpc_requests_total[5m])) by (method)
+      # P50/P90/P99 latency per method from histogram
+      - record: grpc:latency:p50
+        expr: histogram_quantile(0.50, rate(grpc_request_duration_seconds_bucket[5m]))
+      - record: grpc:latency:p90
+        expr: histogram_quantile(0.90, rate(grpc_request_duration_seconds_bucket[5m]))
+      - record: grpc:latency:p99
+        expr: histogram_quantile(0.99, rate(grpc_request_duration_seconds_bucket[5m]))
+      # Active streams per instance
+      - record: grpc:active_streams:max
+        expr: max(grpc_active_streams) by (instance)
+
+  - name: grpc-service-alerts
+    interval: 30s
+    rules:
+      # High error rate: >5% of requests failing over 5m
+      - alert: HighErrorRate
+        expr: |
+          sum(rate(grpc_errors_total[5m])) by (method)
+          /
+          max(rate(grpc_requests_total[5m])) by (method)
+          > 0.05
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "High error rate on {{ $labels.method }}"
+          description: "Error rate on {{ $labels.method }} is {{ $value | humanizePercentage }} over 5m"
+
+      # Elevated latency: P99 > 1s for 5m
+      - alert: HighLatency
+        expr: |
+          histogram_quantile(0.99, rate(grpc_request_duration_seconds_bucket[5m]))
+          > 1.0
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High P99 latency on {{ $labels.method }}"
+          description: "P99 latency on {{ $labels.method }} is {{ $value }}s over 5m"
+
+      # No active streams indicates potential service disruption
+      - alert: NoActiveStreams
+        expr: max(grpc_active_streams) == 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "No active gRPC streams"
+          description: "Zero active streams across all instances for 5m"
+
+      # Many concurrent streams might indicate resource pressure
+      - alert: HighActiveStreams
+        expr: max(grpc_active_streams) > 50
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High number of active streams"
+          description: "Active streams at {{ $value }} (threshold: 50)"
+
+      # Instance down: metrics completely missing
+      - alert: InstanceDown
+        expr: up{job="grpc-service"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "gRPC service instance {{ $labels.instance }} is down"
+          description: "Instance {{ $labels.instance }} has been unreachable for 1m"
+
+      # Request rate anomaly: sudden drop or surge
+      - alert: RequestRateAnomaly
+        expr: |
+          abs(
+            rate(grpc_requests_total[5m])
+            -
+            avg(rate(grpc_requests_total[30m])) by (method)
+          ) > (2 * stddev(rate(grpc_requests_total[30m])) by (method))
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Abnormal request rate on {{ $methods }}"
+          description: "Request rate deviation exceeds 2 sigma on {{ $labels.method }}"
+
+      # Database connection pool saturation
+      - alert: DBPoolExhaustion
+        expr: |
+          max by (instance) (
+            grpc_db_max_open_connections - grpc_db_in_use_connections - grpc_db_idle_connections
+          ) <= 1
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Database connection pool near exhaustion"
+          description: "Instance {{ $labels.instance }} has {{ $value }} available connections remaining"
+
+      # High database wait count indicates connection contention
+      - alert: DBPoolContention
+        expr: rate(grpc_db_wait_count_total[5m]) > 10
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Database connection wait rate is high"
+          description: "Instance {{ $labels.instance }} has {{ $value }} waits/sec over 5m"
