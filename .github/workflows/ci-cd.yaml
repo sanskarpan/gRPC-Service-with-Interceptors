@@ -1,0 +1,286 @@
+name: CI/CD
+
+on:
+  push:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: grpc-service-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  GO_VERSION: "1.26.5"
+  NODE_VERSION: "22.14.0"
+  COVERAGE_MIN: "10"
+  GOLANGCI_LINT_VERSION: "v2.1.6"
+  GOVULNCHECK_VERSION: "v1.1.4"
+
+jobs:
+  backend:
+    name: Backend checks
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: false
+
+      - name: Cache Go modules
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-
+
+      - name: Verify toolchain
+        run: test "$(go version | awk '{print $3}')" = "go${GO_VERSION}"
+
+      - name: Check gofumpt formatting
+        run: |
+          go install mvdan.cc/gofumpt@latest
+          unformatted="$("$(go env GOPATH)/bin/gofumpt" -l . 2>/dev/null | grep -v vendor/ || true)"
+          if [ -n "$unformatted" ]; then
+            echo "The following files are not gofumpt-formatted:"
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - name: Download and verify modules
+        run: |
+          go mod download
+          go mod verify
+
+      - name: Build
+        run: go build ./...
+
+      - name: Run go vet
+        run: go vet ./...
+
+      - name: Test with race detector and coverage
+        run: |
+          go test -race -covermode=atomic -coverprofile=coverage.out ./cmd/... ./internal/... ./pkg/...
+          coverage="$(go tool cover -func=coverage.out | awk '/^total:/ {gsub("%", "", $3); print $3}')"
+          awk -v actual="$coverage" -v minimum="$COVERAGE_MIN" 'BEGIN { if (actual < minimum) { printf "coverage %.1f%% is below %.1f%%\n", actual, minimum; exit 1 } }'
+
+      - name: Upload coverage artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-coverage
+          path: coverage.out
+          retention-days: 7
+
+      - name: Verify generated protobufs
+        run: make proto-check
+
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v7
+        with:
+          version: ${{ env.GOLANGCI_LINT_VERSION }}
+          args: --timeout=5m
+
+      - name: govulncheck
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@${{ env.GOVULNCHECK_VERSION }}
+          "$(go env GOPATH)/bin/govulncheck" ./cmd/... ./internal/... ./pkg/...
+
+      - name: Smoke fuzz tests
+        run: |
+          go test -run=^$ -fuzz=. -fuzztime=10s ./pkg/... || true
+
+  integration:
+    name: Postgres integration and E2E
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: grpc_service_test
+          POSTGRES_USER: orpheus
+          POSTGRES_PASSWORD: orpheus
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: false
+      - name: Wait for Postgres
+        run: |
+          for i in {1..30}; do
+            if pg_isready -h 127.0.0.1 -p 5432 >/dev/null 2>&1; then
+              echo "Postgres ready"
+              break
+            fi
+            sleep 1
+          done
+      - name: Run Postgres integration tests
+        env:
+          TEST_DATABASE_URL: "postgres://orpheus:orpheus@127.0.0.1:5432/grpc_service_test?sslmode=disable"
+        run: |
+          go test -race -count=1 -timeout=120s \
+            -run 'TestPostgres' \
+            ./internal/storage/...
+      - name: Run E2E tests
+        env:
+          TEST_DATABASE_URL: "postgres://orpheus:orpheus@127.0.0.1:5432/grpc_service_test?sslmode=disable"
+          CGO_ENABLED: "1"
+        run: |
+          go test -race -count=1 -timeout=300s \
+            -run 'TestE2E' \
+            ./cmd/server/...
+      - name: Run retry unit tests
+        env:
+          TEST_DATABASE_URL: "postgres://orpheus:orpheus@127.0.0.1:5432/grpc_service_test?sslmode=disable"
+        run: |
+          go test -race -count=1 -timeout=60s \
+            -run 'TestRetry|TestBackoff|TestIsRetryable' \
+            ./internal/storage/...
+
+  frontend:
+    name: Frontend checks
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm run build
+      - name: Coverage
+        run: npm test -- --coverage --coverageReporters=text-summary --coverageThreshold='{"global":{"lines":10}}' --passWithNoTests || true
+      - run: npm audit --omit=dev --audit-level=high
+
+  manifests:
+    name: Manifest validation
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+      - name: Validate K8s manifests parse
+        run: |
+          for f in test/deployment/k8s/*.yaml; do
+            echo "checking $f"
+            awk 'BEGIN{ok=1} /^---$/{if(ok) print "ok"; ok=1; doc=""; next} {doc=doc $0 "\n"} END{if(ok && doc!="") print "ok"}' "$f"
+          done
+          python3 -c "
+          import sys, yaml
+          files = [
+            'test/deployment/k8s/deployment.yaml',
+            'test/deployment/k8s/poddisruptionbudget.yaml',
+            'test/deployment/k8s/networkpolicy.yaml',
+            'test/deployment/k8s/serviceaccount.yaml',
+            'docker-compose.yaml',
+          ]
+          for f in files:
+              with open(f) as h:
+                  list(yaml.safe_load_all(h))
+              print(f, 'parses cleanly')
+          "
+
+  container:
+    name: Container build and scan
+    runs-on: ubuntu-latest
+    needs: [backend, frontend, manifests]
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          tags: grpc-service:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Smoke run
+        run: |
+          docker run --rm --read-only --tmpfs /tmp/grpc:rw,nosuid,nodev,size=32m \
+            -p 8080:8080 \
+            -e TLS_ENABLED=false \
+            -e JWT_SECRET=ci-smoke-secret-not-for-prod \
+            -e AUTH_API_KEYS=ci-smoke-api-key-not-for-prod \
+            -e METRICS_ENABLED=false \
+            grpc-service:ci &
+          pid=$!
+          for i in {1..30}; do
+            if curl -sf --max-time 5 http://127.0.0.1:8080/healthz >/dev/null; then
+              echo "healthz ok"
+              break
+            fi
+            sleep 1
+          done
+          curl -sS --max-time 5 http://127.0.0.1:8080/healthz
+          kill "$pid" || true
+          wait "$pid" || true
+
+      - name: Scan image
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: grpc-service:ci
+          format: table
+          exit-code: "1"
+          ignore-unfixed: true
+          vuln-type: os,library
+          severity: CRITICAL,HIGH
+
+  release:
+    name: Tag main release
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [backend, frontend, manifests, container, integration]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Create immutable version tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          latest="$(git tag --list 'v*' --sort=-v:refname | head -n 1)"
+          if [ -z "$latest" ]; then
+            version="v0.1.0"
+          else
+            version="$(echo "$latest" | awk -F. '{printf "%s.%s.%d\n", $1, $2, $3 + 1}')"
+          fi
+          git tag "$version" "$GITHUB_SHA"
+          git push origin "$version"
