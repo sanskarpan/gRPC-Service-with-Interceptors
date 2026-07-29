@@ -35,6 +35,11 @@ func loadTestConfig(t *testing.T) *config.Config {
 	cfg.Server.StreamInterval = time.Millisecond
 	cfg.Server.RateLimitPerSecond = 10000
 	cfg.Server.RateLimitBurst = 20000
+	// The baseline throughput tests drive many requests from a single
+	// authenticated client, so the per-client limiter must also be raised;
+	// otherwise it (not the global limiter) rejects the load.
+	cfg.Server.PerClientRateLimitPerSecond = 10000
+	cfg.Server.PerClientRateLimitBurst = 20000
 	cfg.Server.Timeout = 5 * time.Second
 	return cfg
 }
