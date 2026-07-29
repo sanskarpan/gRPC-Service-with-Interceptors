@@ -43,11 +43,13 @@ type CircuitBreakerConfig struct {
 // DefaultCircuitBreakerConfig returns sensible defaults.
 func DefaultCircuitBreakerConfig() CircuitBreakerConfig {
 	return CircuitBreakerConfig{
-		Enabled:             false,
-		FailureThreshold:    5,
-		SuccessThreshold:    2,
-		OpenTimeout:         30 * time.Second,
-		MaxHalfOpenRequests: 1,
+		Enabled:          false,
+		FailureThreshold: 5,
+		SuccessThreshold: 2,
+		OpenTimeout:      30 * time.Second,
+		// Must be >= SuccessThreshold, otherwise a half-open episode can never
+		// admit enough probes to close and the breaker wedges half-open.
+		MaxHalfOpenRequests: 2,
 	}
 }
 
@@ -56,12 +58,12 @@ type CircuitBreakerRepository struct {
 	Repository
 	cfg CircuitBreakerConfig
 
-	state          atomic.Int32
-	failureCount   atomic.Int64
-	successCount   atomic.Int64
-	halfOpenCount  atomic.Int64
-	lastFailureAt  atomic.Int64
-	openSince      atomic.Int64
+	state         atomic.Int32
+	failureCount  atomic.Int64
+	successCount  atomic.Int64
+	halfOpenCount atomic.Int64
+	lastFailureAt atomic.Int64
+	openSince     atomic.Int64
 
 	mu sync.Mutex
 }
@@ -142,17 +144,22 @@ func (cb *CircuitBreakerRepository) beforeCall() error {
 }
 
 func (cb *CircuitBreakerRepository) afterCall(err error) {
+	// The whole state transition runs under the mutex. The counter fields stay
+	// atomic so State()/Counts() can be read lock-free, but every mutation of
+	// the composite state machine happens here so success and failure paths
+	// cannot race (e.g. a success Store(0) interleaving with a failure Add(1)).
+	cb.mu.Lock()
+	defer cb.mu.Unlock()
+
+	state := CircuitBreakerState(cb.state.Load())
+
 	if err == nil {
-		switch CircuitBreakerState(cb.state.Load()) {
+		switch state {
 		case CircuitBreakerHalfOpen:
 			cb.successCount.Add(1)
 			if cb.successCount.Load() >= int64(cb.cfg.SuccessThreshold) {
-				cb.mu.Lock()
-				if CircuitBreakerState(cb.state.Load()) == CircuitBreakerHalfOpen {
-					cb.state.Store(int32(CircuitBreakerClosed))
-					cb.ResetCounts()
-				}
-				cb.mu.Unlock()
+				cb.state.Store(int32(CircuitBreakerClosed))
+				cb.ResetCounts()
 			}
 		case CircuitBreakerClosed:
 			cb.failureCount.Store(0)
@@ -160,30 +167,26 @@ func (cb *CircuitBreakerRepository) afterCall(err error) {
 		return
 	}
 
+	// ErrUnavailable is the breaker's own degraded signal and is intentionally
+	// counted as neither success nor failure.
 	if err == ErrUnavailable {
 		return
 	}
 
-	if CircuitBreakerState(cb.state.Load()) == CircuitBreakerHalfOpen {
-		cb.mu.Lock()
+	cb.lastFailureAt.Store(time.Now().UnixNano())
+
+	if state == CircuitBreakerHalfOpen {
+		// A failure while probing sends us straight back to open.
 		cb.failureCount.Store(0)
 		cb.state.Store(int32(CircuitBreakerOpen))
 		cb.openSince.Store(time.Now().UnixNano())
-		cb.mu.Unlock()
 		return
 	}
 
 	cb.failureCount.Add(1)
-	cb.lastFailureAt.Store(time.Now().UnixNano())
-
-	if cb.failureCount.Load() >= int64(cb.cfg.FailureThreshold) {
-		cb.mu.Lock()
-		if cb.failureCount.Load() >= int64(cb.cfg.FailureThreshold) &&
-			CircuitBreakerState(cb.state.Load()) == CircuitBreakerClosed {
-			cb.state.Store(int32(CircuitBreakerOpen))
-			cb.openSince.Store(time.Now().UnixNano())
-		}
-		cb.mu.Unlock()
+	if state == CircuitBreakerClosed && cb.failureCount.Load() >= int64(cb.cfg.FailureThreshold) {
+		cb.state.Store(int32(CircuitBreakerOpen))
+		cb.openSince.Store(time.Now().UnixNano())
 	}
 }
 
