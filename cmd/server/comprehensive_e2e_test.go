@@ -1014,11 +1014,14 @@ func TestE2E_Health_ReadinessAfterShutdown(t *testing.T) {
 		t.Fatal("run() did not drain")
 	}
 
+	// After run() has fully drained, the health listener is closed. /readyz must
+	// therefore be either unreachable (connection refused) or, if somehow still
+	// answering, report not-ready. It must never still return 200.
 	resp, err := http.Get(healthURL + "/readyz")
 	if err == nil {
 		defer resp.Body.Close()
 		if resp.StatusCode == http.StatusOK {
-			t.Log("note: /readyz returned 200 after shutdown, listener may not have been polled fast enough")
+			t.Fatalf("/readyz returned 200 after full shutdown; readiness must not report ready")
 		}
 	}
 }
@@ -1359,7 +1362,13 @@ func TestE2E_GracefulShutdown_DrainsInFlight(t *testing.T) {
 	<-shutdownDone
 }
 
-func TestE2E_PanicRecovery(t *testing.T) {
+// TestE2E_ServiceRemainsOperationalAfterInvalidInput verifies that a request
+// which the handler rejects (invalid argument) does not wedge the server: a
+// subsequent valid request still succeeds. Panic-to-Internal recovery of the
+// wired UnaryPanicRecoveryInterceptor is covered directly by the unit tests
+// in pkg/interceptors (the real UserService has no panic path to exercise
+// end-to-end).
+func TestE2E_ServiceRemainsOperationalAfterInvalidInput(t *testing.T) {
 	cfg := newBaseTestConfig(t)
 	server := startTestServer(t, cfg)
 	defer server.Stop(t)
@@ -1369,15 +1378,22 @@ func TestE2E_PanicRecovery(t *testing.T) {
 	client := pb.NewUserServiceClient(conn)
 	ctx := authContext(context.Background(), testAPIKey)
 
-	created, err := client.CreateUser(ctx, &pb.CreateUserRequest{Name: "Panic Recv", Email: "panicrecv@test.com", Age: 30})
+	// A rejected request must not affect server liveness.
+	if _, err := client.GetUser(ctx, &pb.GetUserRequest{Id: ""}); status.Code(err) != codes.InvalidArgument {
+		t.Fatalf("expected InvalidArgument for empty id, got %v", err)
+	}
+
+	created, err := client.CreateUser(ctx, &pb.CreateUserRequest{Name: "Still Up", Email: "stillup@test.com", Age: 30})
 	if err != nil {
-		t.Fatalf("CreateUser: %v", err)
+		t.Fatalf("CreateUser after rejected request: %v", err)
 	}
 	got, err := client.GetUser(ctx, &pb.GetUserRequest{Id: created.GetId()})
-	if err != nil || got.GetId() != created.GetId() {
-		t.Fatalf("GetUser after potential panic: %v", err)
+	if err != nil {
+		t.Fatalf("GetUser after rejected request: %v", err)
 	}
-	t.Log("panic recovery: service remains operational after edge-case operations")
+	if got.GetId() != created.GetId() {
+		t.Fatalf("expected id %q, got %q", created.GetId(), got.GetId())
+	}
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -1650,4 +1666,3 @@ func startPostgresServer(t *testing.T, cfg *config.Config) (*runningServer, erro
 	}
 	return nil, fmt.Errorf("postgres server never became ready")
 }
-
