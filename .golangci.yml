@@ -1,0 +1,24 @@
+version: "2"
+
+run:
+  timeout: 5m
+
+linters:
+  # Keep the default linter set (errcheck, govet, ineffassign, staticcheck,
+  # unused) enabled for all production code.
+  default: standard
+  exclusions:
+    generated: lax
+    rules:
+      # Deferred Close() and fire-and-forget setup calls in tests are an
+      # accepted idiom; requiring explicit error handling there adds noise
+      # without improving correctness.
+      - path: _test\.go
+        linters:
+          - errcheck
+      # Several tests deliberately pass a nil context to verify that the code
+      # under test rejects it. SA1012 flags that intentional pattern.
+      - path: _test\.go
+        text: "SA1012"
+        linters:
+          - staticcheck
