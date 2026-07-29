@@ -15,6 +15,7 @@ import (
 
 	"github.com/example/grpc-service/pkg/config"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 )
 
 // TestCloseConnectionNil verifies that closeConnection is safe to call with
@@ -30,7 +31,7 @@ func TestCloseConnectionNil(t *testing.T) {
 // must not panic.
 func TestCloseConnectionWithConn(t *testing.T) {
 	t.Parallel()
-	conn, err := grpc.NewClient("passthrough://localhost", grpc.WithInsecure())
+	conn, err := grpc.NewClient("passthrough://localhost", grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		t.Fatalf("grpc.NewClient() error = %v", err)
 	}

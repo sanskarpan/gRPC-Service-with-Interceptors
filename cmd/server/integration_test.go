@@ -381,7 +381,16 @@ func TestE2E_HealthEndpointsDuringLifecycle(t *testing.T) {
 		time.Sleep(5 * time.Millisecond)
 	}
 	if !observedNotReady {
-		t.Log("warning: readyz=503 transition window was not observed before listener closed")
+		// The 503 window can be near-zero when GracefulStop completes
+		// immediately (no active RPCs) and the listener closes. That is fine,
+		// but the invariant must still hold: once shutdown has begun /readyz
+		// must never again report ready. It must be unreachable or non-200.
+		if response, err := http.Get(readyzURL); err == nil {
+			_ = response.Body.Close()
+			if response.StatusCode == http.StatusOK {
+				t.Fatalf("/readyz still returned 200 after shutdown began; readiness never went not-ready")
+			}
+		}
 	}
 	if response, err := http.Get(healthzURL); err == nil {
 		_ = response.Body.Close()

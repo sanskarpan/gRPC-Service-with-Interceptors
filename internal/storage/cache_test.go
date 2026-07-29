@@ -3,6 +3,7 @@ package storage
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 	"testing"
 	"time"
@@ -12,14 +13,14 @@ import (
 
 type mockRepo struct {
 	Repository
-	getFn            func(ctx context.Context, id string) (*pb.User, error)
-	createFn         func(ctx context.Context, user *pb.User, maxUsers int) error
-	updateFn         func(ctx context.Context, user *pb.User) error
+	getFn              func(ctx context.Context, id string) (*pb.User, error)
+	createFn           func(ctx context.Context, user *pb.User, maxUsers int) error
+	updateFn           func(ctx context.Context, user *pb.User) error
 	readModifyUpdateFn func(ctx context.Context, id string, fn ReadModifyUpdateFn) (*pb.User, error)
-	deleteFn         func(ctx context.Context, id string) error
-	pingFn           func(ctx context.Context) error
-	mu               sync.Mutex
-	getCallCount     int
+	deleteFn           func(ctx context.Context, id string) error
+	pingFn             func(ctx context.Context) error
+	mu                 sync.Mutex
+	getCallCount       int
 }
 
 func newMockRepo() *mockRepo {
@@ -73,6 +74,28 @@ func TestNewCacheRepositoryDefaultTTL(t *testing.T) {
 	r := NewCacheRepository(newMockRepo(), 0)
 	if r.ttl != 30*time.Second {
 		t.Fatalf("expected default TTL 30s, got %v", r.ttl)
+	}
+}
+
+func TestCacheBoundedSize(t *testing.T) {
+	t.Parallel()
+	mock := newMockRepo()
+	mock.getFn = func(_ context.Context, id string) (*pb.User, error) {
+		return &pb.User{Id: id, Name: "u"}, nil
+	}
+	const cap = 50
+	cache := NewCacheRepositoryWithLimit(mock, time.Minute, cap)
+	ctx := context.Background()
+
+	// Populate far more distinct keys than the cap allows.
+	for i := range 500 {
+		if _, err := cache.Get(ctx, fmt.Sprintf("user-%d", i)); err != nil {
+			t.Fatalf("Get: %v", err)
+		}
+	}
+
+	if got := cache.size(); got > cap {
+		t.Fatalf("cache grew unbounded: size %d exceeds cap %d", got, cap)
 	}
 }
 

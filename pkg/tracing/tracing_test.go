@@ -44,7 +44,7 @@ func TestTracingNewServerHandler(t *testing.T) {
 func TestTracingStart(t *testing.T) {
 	ctx := context.Background()
 	Init(ctx, config.TracingConfig{Enabled: false})
-	ctx, span := Start(ctx, "test-span")
+	_, span := Start(ctx, "test-span")
 	if span == nil {
 		t.Fatal("Start() returned nil span")
 	}

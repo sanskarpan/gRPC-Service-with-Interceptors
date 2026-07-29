@@ -32,6 +32,19 @@ func TestCircuitBreakerDefaultConfig(t *testing.T) {
 	}
 }
 
+func TestDefaultCircuitBreakerConfigCanRecover(t *testing.T) {
+	t.Parallel()
+	// A half-open episode admits at most MaxHalfOpenRequests probes and needs
+	// SuccessThreshold successes to close. If Max < Success the breaker can
+	// never return to Closed and wedges half-open forever. The shipped default
+	// must be able to recover.
+	d := DefaultCircuitBreakerConfig()
+	if d.MaxHalfOpenRequests < d.SuccessThreshold {
+		t.Fatalf("default config can never close: MaxHalfOpenRequests(%d) < SuccessThreshold(%d)",
+			d.MaxHalfOpenRequests, d.SuccessThreshold)
+	}
+}
+
 func TestCircuitBreakerClosedToOpen(t *testing.T) {
 	t.Parallel()
 	mock := newMockRepo()
@@ -40,8 +53,8 @@ func TestCircuitBreakerClosedToOpen(t *testing.T) {
 	}
 
 	cb := NewCircuitBreakerRepository(mock, CircuitBreakerConfig{
-		FailureThreshold: 3,
-		OpenTimeout:     time.Minute,
+		FailureThreshold:    3,
+		OpenTimeout:         time.Minute,
 		MaxHalfOpenRequests: 1,
 	})
 
@@ -77,8 +90,8 @@ func TestCircuitBreakerSuccessResetsFailureCount(t *testing.T) {
 	}
 
 	cb := NewCircuitBreakerRepository(mock, CircuitBreakerConfig{
-		FailureThreshold: 5,
-		OpenTimeout:     time.Minute,
+		FailureThreshold:    5,
+		OpenTimeout:         time.Minute,
 		MaxHalfOpenRequests: 1,
 	})
 
@@ -114,9 +127,9 @@ func TestCircuitBreakerOpenToHalfOpenToClosed(t *testing.T) {
 	}
 
 	cb := NewCircuitBreakerRepository(mock, CircuitBreakerConfig{
-		FailureThreshold:  2,
-		OpenTimeout:       50 * time.Millisecond,
-		SuccessThreshold:  1,
+		FailureThreshold:    2,
+		OpenTimeout:         50 * time.Millisecond,
+		SuccessThreshold:    1,
 		MaxHalfOpenRequests: 1,
 	})
 
@@ -163,8 +176,8 @@ func TestCircuitBreakerOpenToHalfOpenToOpen(t *testing.T) {
 	}
 
 	cb := NewCircuitBreakerRepository(mock, CircuitBreakerConfig{
-		FailureThreshold: 2,
-		OpenTimeout:     50 * time.Millisecond,
+		FailureThreshold:    2,
+		OpenTimeout:         50 * time.Millisecond,
 		MaxHalfOpenRequests: 1,
 	})
 
@@ -246,8 +259,8 @@ func TestCircuitBreakerCreateUpdateDeleteRMW(t *testing.T) {
 	}
 
 	cb := NewCircuitBreakerRepository(mock, CircuitBreakerConfig{
-		FailureThreshold: 1,
-		OpenTimeout:     time.Minute,
+		FailureThreshold:    1,
+		OpenTimeout:         time.Minute,
 		MaxHalfOpenRequests: 1,
 	})
 
@@ -289,8 +302,8 @@ func TestCircuitBreakerPingDoesNotAffectFailures(t *testing.T) {
 	mock.pingFn = func(_ context.Context) error { return pingErr }
 
 	cb := NewCircuitBreakerRepository(mock, CircuitBreakerConfig{
-		FailureThreshold: 2,
-		OpenTimeout:     time.Minute,
+		FailureThreshold:    2,
+		OpenTimeout:         time.Minute,
 		MaxHalfOpenRequests: 1,
 	})
 
@@ -314,8 +327,8 @@ func TestCircuitBreakerCloseMethod(t *testing.T) {
 	}
 
 	cb := NewCircuitBreakerRepository(mock, CircuitBreakerConfig{
-		FailureThreshold: 1,
-		OpenTimeout:     time.Minute,
+		FailureThreshold:    1,
+		OpenTimeout:         time.Minute,
 		MaxHalfOpenRequests: 1,
 	})
 
@@ -352,8 +365,8 @@ func TestCircuitBreakerConcurrency(t *testing.T) {
 	}
 
 	cb := NewCircuitBreakerRepository(mock, CircuitBreakerConfig{
-		FailureThreshold: 5,
-		OpenTimeout:     100 * time.Millisecond,
+		FailureThreshold:    5,
+		OpenTimeout:         100 * time.Millisecond,
 		MaxHalfOpenRequests: 3,
 	})
 
