@@ -11,33 +11,55 @@ import (
 )
 
 type cacheEntry struct {
-	user  *pb.User
-	exp   time.Time
-	stale bool
+	user *pb.User
+	exp  time.Time
 }
+
+// defaultCacheMaxEntries bounds the cache so a workload that reads many
+// distinct keys cannot grow it without limit.
+const defaultCacheMaxEntries = 10000
 
 // CacheRepository wraps a Repository with an in-memory read-through cache
 // that serves stale data when the underlying store is unavailable.
 type CacheRepository struct {
 	Repository
-	ttl time.Duration
+	ttl        time.Duration
+	maxEntries int
 
 	mu sync.RWMutex
 	m  map[string]*cacheEntry
 }
 
-// NewCacheRepository wraps repo with a TTL-based cache. Get operations
-// populate the cache on success and serve stale entries when the underlying
-// repo returns an error. Mutating operations invalidate the affected key.
+// NewCacheRepository wraps repo with a TTL-based cache bounded to
+// defaultCacheMaxEntries. Get operations populate the cache on success and
+// serve stale entries when the underlying repo returns an error. Mutating
+// operations invalidate the affected key.
 func NewCacheRepository(repo Repository, ttl time.Duration) *CacheRepository {
+	return NewCacheRepositoryWithLimit(repo, ttl, defaultCacheMaxEntries)
+}
+
+// NewCacheRepositoryWithLimit is like NewCacheRepository but with an explicit
+// maximum entry count. A non-positive maxEntries falls back to the default.
+func NewCacheRepositoryWithLimit(repo Repository, ttl time.Duration, maxEntries int) *CacheRepository {
 	if ttl <= 0 {
 		ttl = 30 * time.Second
+	}
+	if maxEntries <= 0 {
+		maxEntries = defaultCacheMaxEntries
 	}
 	return &CacheRepository{
 		Repository: repo,
 		ttl:        ttl,
+		maxEntries: maxEntries,
 		m:          make(map[string]*cacheEntry),
 	}
+}
+
+// size returns the current number of cached entries.
+func (c *CacheRepository) size() int {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return len(c.m)
 }
 
 func (c *CacheRepository) get(key string) (*pb.User, bool) {
@@ -65,11 +87,43 @@ func (c *CacheRepository) getStale(key string) (*pb.User, bool) {
 
 func (c *CacheRepository) set(key string, user *pb.User) {
 	c.mu.Lock()
+	if _, exists := c.m[key]; !exists {
+		c.evictLocked()
+	}
 	c.m[key] = &cacheEntry{
 		user: proto.Clone(user).(*pb.User),
 		exp:  time.Now().Add(c.ttl),
 	}
 	c.mu.Unlock()
+}
+
+// evictLocked keeps the cache within maxEntries. It must be called with the
+// write lock held and only when a new key is about to be inserted. It first
+// drops expired entries, then, if still at capacity, evicts the entry closest
+// to expiring (approximate LRU by TTL).
+func (c *CacheRepository) evictLocked() {
+	if len(c.m) < c.maxEntries {
+		return
+	}
+	now := time.Now()
+	for k, e := range c.m {
+		if now.After(e.exp) {
+			delete(c.m, k)
+		}
+	}
+	if len(c.m) < c.maxEntries {
+		return
+	}
+	var oldestKey string
+	var oldestExp time.Time
+	for k, e := range c.m {
+		if oldestKey == "" || e.exp.Before(oldestExp) {
+			oldestKey, oldestExp = k, e.exp
+		}
+	}
+	if oldestKey != "" {
+		delete(c.m, oldestKey)
+	}
 }
 
 func (c *CacheRepository) del(key string) {
