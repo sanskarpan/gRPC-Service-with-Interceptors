@@ -65,9 +65,9 @@ secret versions and rotate through the secret manager.
 
 Check Prometheus request/error counters, latency histograms, active streams,
 and process/container CPU and memory. `ResourceExhausted` can indicate rate,
-message, stream, or user-capacity limits. Reduce load or scale replicas only
-after confirming the in-memory storage limitation is acceptable; replicas do
-not share users.
+message, stream, or user-capacity limits. Reduce load or scale replicas. Note
+that with the `memory` storage backend replicas do not share state; horizontal
+scaling requires the `postgres` backend (see storage configuration).
 
 ### 5. Missing telemetry or collector errors
 
@@ -79,9 +79,12 @@ readiness signal.
 ## Shutdown and data warning
 
 SIGTERM marks the instance unready, drains gRPC and HTTP listeners with the
-configured timeout, and then exits. The current UserService stores data only in
-memory; a restart or reschedule loses it. Escalate any report of lost user
-state as a release-blocking persistence issue, not as a recoverable cache miss.
+configured timeout, and then exits. Durability depends on the configured
+storage backend. With the `postgres` backend state is persisted and survives
+restarts. With the `memory` backend (the default in `configs/config.yaml`,
+intended for local development and tests) a restart or reschedule loses all
+user state — in that configuration, escalate any report of lost user state as
+a release-blocking persistence issue, not as a recoverable cache miss.
 
 ## Escalation
 
