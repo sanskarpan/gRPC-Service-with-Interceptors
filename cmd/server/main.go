@@ -23,7 +23,6 @@ import (
 	"github.com/example/grpc-service/pkg/metrics"
 	"github.com/example/grpc-service/pkg/pb"
 	"github.com/example/grpc-service/pkg/tracing"
-	grpcrecovery "github.com/grpc-ecosystem/go-grpc-middleware/v2/interceptors/recovery"
 	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"google.golang.org/grpc"
@@ -221,14 +220,14 @@ func openRepository(ctx context.Context, cfg config.StorageConfig) (storage.Repo
 	case "postgres":
 		var err error
 		repo, err = storage.NewPostgresRepository(ctx, storage.PostgresConfig{
-			URL:              cfg.URL,
-			MaxOpenConns:     cfg.MaxOpenConns,
-			MaxIdleConns:     cfg.MaxIdleConns,
-			ConnMaxLifetime:  cfg.ConnMaxLifetime,
-			PingTimeout:      cfg.PingTimeout,
-			RetryAttempts:    cfg.RetryAttempts,
-			RetryBackoff:     cfg.RetryBackoff,
-			RetryMaxBackoff:  cfg.RetryMaxBackoff,
+			URL:             cfg.URL,
+			MaxOpenConns:    cfg.MaxOpenConns,
+			MaxIdleConns:    cfg.MaxIdleConns,
+			ConnMaxLifetime: cfg.ConnMaxLifetime,
+			PingTimeout:     cfg.PingTimeout,
+			RetryAttempts:   cfg.RetryAttempts,
+			RetryBackoff:    cfg.RetryBackoff,
+			RetryMaxBackoff: cfg.RetryMaxBackoff,
 		})
 		if err != nil {
 			return nil, err
@@ -260,7 +259,7 @@ func newGRPCServer(cfg *config.Config, authenticator *interceptors.Authenticator
 	)
 	opts := []grpc.ServerOption{
 		grpc.ChainUnaryInterceptor(
-			grpcrecovery.UnaryServerInterceptor(),
+			interceptors.UnaryPanicRecoveryInterceptor,
 			interceptors.UnaryRequestIDInterceptor,
 			interceptors.UnaryLoggingInterceptor,
 			interceptors.UnaryMetricsInterceptor,
@@ -270,21 +269,33 @@ func newGRPCServer(cfg *config.Config, authenticator *interceptors.Authenticator
 			interceptors.UnaryTimeoutInterceptor(cfg.Server.Timeout),
 		),
 		grpc.ChainStreamInterceptor(
-			grpcrecovery.StreamServerInterceptor(),
+			interceptors.StreamPanicRecoveryInterceptor,
 			interceptors.StreamRequestIDInterceptor,
 			interceptors.StreamLoggingInterceptor,
 			interceptors.StreamMetricsInterceptor,
 			streamRateLimit,
 			interceptors.StreamAuthInterceptorWithAuthenticator(authenticator),
 			perClientStream,
+			// No StreamTimeoutInterceptor here on purpose: streams are
+			// legitimately long-lived (server events run up to
+			// MaxStreamMessages * StreamInterval). The per-stream message cap
+			// bounds their duration; the per-request Timeout would kill valid
+			// streams. Client-supplied deadlines still apply.
 		),
 		grpc.MaxRecvMsgSize(cfg.Server.MaxRecvMessageMB * 1024 * 1024),
 		grpc.MaxSendMsgSize(cfg.Server.MaxSendMessageMB * 1024 * 1024),
 		grpc.MaxConcurrentStreams(uint32(cfg.Server.MaxConns)),
+		// Keepalive is deliberately independent of the per-request timeout:
+		// tying idle/ping intervals to a short request deadline thrashes
+		// long-lived connections and can ping more aggressively than the
+		// enforcement policy permits clients to. These are transport-lifecycle
+		// concerns, not request concerns.
 		grpc.KeepaliveParams(keepalive.ServerParameters{
-			MaxConnectionIdle: time.Duration(cfg.Server.Timeout),
-			Time:              time.Duration(cfg.Server.Timeout / 2),
-			Timeout:           10 * time.Second,
+			MaxConnectionIdle:     15 * time.Minute,
+			MaxConnectionAge:      30 * time.Minute,
+			MaxConnectionAgeGrace: time.Duration(cfg.Server.Timeout),
+			Time:                  1 * time.Minute,
+			Timeout:               20 * time.Second,
 		}),
 		grpc.KeepaliveEnforcementPolicy(keepalive.EnforcementPolicy{
 			MinTime:             10 * time.Second,
