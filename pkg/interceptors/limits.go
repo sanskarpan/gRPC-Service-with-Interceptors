@@ -53,6 +53,11 @@ type PerClientRateLimiter struct {
 	rate     rate.Limit
 	burst    int
 
+	// global is a single shared bucket used when no client ID is available
+	// (unauthenticated or unattributed traffic). It enforces the same
+	// rate/burst rather than degrading to unlimited.
+	global *rate.Limiter
+
 	quit chan struct{}
 }
 
@@ -64,6 +69,7 @@ func NewPerClientRateLimiter(r rate.Limit, burst int, cleanupInterval time.Durat
 		limiters: make(map[string]*clientLimiter),
 		rate:     r,
 		burst:    burst,
+		global:   rate.NewLimiter(r, burst),
 		quit:     make(chan struct{}),
 	}
 	if cleanupInterval > 0 {
@@ -82,10 +88,11 @@ func (p *PerClientRateLimiter) Stop() {
 }
 
 // Allow reports whether the identified client may proceed. An empty clientID
-// falls back to the global limiter defaults.
+// falls back to a single shared global bucket that enforces the same
+// rate/burst, so unattributed traffic is still bounded.
 func (p *PerClientRateLimiter) Allow(clientID string) bool {
 	if clientID == "" {
-		return rate.NewLimiter(p.rate, p.burst).Allow()
+		return p.global.Allow()
 	}
 	p.mu.Lock()
 	cl, exists := p.limiters[clientID]
