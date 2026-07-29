@@ -4,6 +4,7 @@ package interceptors
 
 import (
 	"context"
+	"math/rand"
 	"time"
 
 	"google.golang.org/grpc"
@@ -19,6 +20,45 @@ var defaultRetryableCodes = []codes.Code{
 	codes.ResourceExhausted,
 	codes.Aborted,
 	codes.Internal,
+}
+
+// safeRetryableCodes are codes where the server provably did not process the
+// request (connection refused, or admission-rejected before the handler ran),
+// so retrying is safe even for non-idempotent RPCs like Create/Update/Delete.
+var safeRetryableCodes = []codes.Code{
+	codes.Unavailable,
+	codes.ResourceExhausted,
+}
+
+type retryableKey struct{}
+
+// WithRetryable marks ctx so the retry interceptor may retry the call on the
+// full RetryableCodes set (including DeadlineExceeded, Aborted, Internal).
+// Use ONLY for idempotent RPCs: retrying a non-idempotent mutation on those
+// codes risks duplicate side effects because the server may have applied the
+// first attempt.
+func WithRetryable(ctx context.Context) context.Context {
+	return context.WithValue(ctx, retryableKey{}, true)
+}
+
+func isRetryableOptIn(ctx context.Context) bool {
+	v, _ := ctx.Value(retryableKey{}).(bool)
+	return v
+}
+
+// shouldRetry decides whether a call may be retried for the given code. Without
+// the WithRetryable opt-in only the always-safe codes are retried, so mutations
+// are not replayed on ambiguous failures.
+func (c RetryConfig) shouldRetry(ctx context.Context, code codes.Code) bool {
+	if isRetryableOptIn(ctx) {
+		return c.isRetryableCode(code)
+	}
+	for _, rc := range safeRetryableCodes {
+		if rc == code {
+			return true
+		}
+	}
+	return false
 }
 
 // RetryConfig controls the client-side retry behaviour.
@@ -49,14 +89,28 @@ func (c RetryConfig) isRetryableCode(code codes.Code) bool {
 	return false
 }
 
-// backoff returns the next backoff duration for the given attempt number
-// using exponential backoff with jitter (capped at MaxBackoff).
+// backoff returns the next backoff duration for the given attempt number using
+// exponential backoff with full jitter, capped at MaxBackoff. Full jitter
+// (a uniform random value in (0, cap]) spreads retries so a fleet of clients
+// does not synchronize into a retry storm.
 func (c RetryConfig) backoff(attempt int) time.Duration {
-	d := c.BaseBackoff * (1 << attempt)
-	if d > c.MaxBackoff {
+	d := c.BaseBackoff
+	if attempt > 0 {
+		// Guard against overflow when shifting by a large attempt count.
+		if attempt >= 62 {
+			d = c.MaxBackoff
+		} else {
+			d = c.BaseBackoff * (1 << attempt)
+		}
+	}
+	if d <= 0 || d > c.MaxBackoff {
 		d = c.MaxBackoff
 	}
-	return d
+	// Full jitter in (0, d]: pick uniformly in [1, d].
+	if d <= 1 {
+		return d
+	}
+	return time.Duration(rand.Int63n(int64(d)) + 1)
 }
 
 // UnaryClientRetryInterceptor returns a grpc.UnaryClientInterceptor that
@@ -82,7 +136,7 @@ func UnaryClientRetryInterceptor(cfg RetryConfig) grpc.UnaryClientInterceptor {
 				return nil
 			}
 			st, ok := status.FromError(lastErr)
-			if !ok || !cfg.isRetryableCode(st.Code()) {
+			if !ok || !cfg.shouldRetry(ctx, st.Code()) {
 				return lastErr
 			}
 		}
@@ -112,7 +166,7 @@ func StreamClientRetryInterceptor(cfg RetryConfig) grpc.StreamClientInterceptor 
 			}
 			lastErr = err
 			st, ok := status.FromError(err)
-			if !ok || !cfg.isRetryableCode(st.Code()) {
+			if !ok || !cfg.shouldRetry(ctx, st.Code()) {
 				return nil, lastErr
 			}
 		}
