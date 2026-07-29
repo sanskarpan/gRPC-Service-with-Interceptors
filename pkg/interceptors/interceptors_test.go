@@ -26,12 +26,12 @@ import (
 
 func TestRequiresAuth(t *testing.T) {
 	tests := map[string]bool{
-		"/grpc.health.v1.Health/Check":    false,
-		"/grpc.health.v1.Health/Watch":    false,
+		"/grpc.health.v1.Health/Check":       false,
+		"/grpc.health.v1.Health/Watch":       false,
 		"/example.v1.UserService/GetUser":    true,
 		"/example.v1.UserService/CreateUser": true,
 		"/example.v1.UserService/Unknown":    true,
-		"/unknown.Service/Method":         true,
+		"/unknown.Service/Method":            true,
 	}
 	for method, expected := range tests {
 		t.Run(method, func(t *testing.T) {
@@ -210,9 +210,9 @@ type fakeServerStream struct {
 	grpc.ServerStream
 }
 
-func (s *fakeServerStream) Context() context.Context { return s.ctx }
-func (s *fakeServerStream) SendMsg(any) error        { return nil }
-func (s *fakeServerStream) RecvMsg(any) error         { return nil }
+func (s *fakeServerStream) Context() context.Context     { return s.ctx }
+func (s *fakeServerStream) SendMsg(any) error            { return nil }
+func (s *fakeServerStream) RecvMsg(any) error            { return nil }
 func (s *fakeServerStream) SetHeader(metadata.MD) error  { return nil }
 func (s *fakeServerStream) SendHeader(metadata.MD) error { return nil }
 func (s *fakeServerStream) SetTrailer(metadata.MD)       {}
@@ -951,15 +951,21 @@ func TestPerClientRateLimiterSeparateBuckets(t *testing.T) {
 
 func TestPerClientRateLimiterEmptyID(t *testing.T) {
 	t.Parallel()
-	limiter := NewPerClientRateLimiter(10, 5, 0)
+	// Empty clientID (unauthenticated / unattributed traffic) must share a
+	// single global bucket that actually enforces the limit — not a fresh
+	// unlimited bucket per call. Otherwise the limiter is a no-op for exactly
+	// the traffic that most needs bounding.
+	limiter := NewPerClientRateLimiter(1, 2, 0)
 	defer limiter.Stop()
 
-	// Empty clientID creates a fresh limiter each time (no caching), so it
-	// should always be allowed (new bucket has burst tokens).
-	for range 5 {
-		if !limiter.Allow("") {
-			t.Fatal("empty clientID should always get a fresh bucket")
-		}
+	if !limiter.Allow("") {
+		t.Fatal("first empty-ID request should be allowed (burst)")
+	}
+	if !limiter.Allow("") {
+		t.Fatal("second empty-ID request should be allowed (burst)")
+	}
+	if limiter.Allow("") {
+		t.Fatal("third empty-ID request should be denied: burst exhausted, shared bucket must throttle")
 	}
 }
 
