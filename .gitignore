@@ -29,6 +29,11 @@ Thumbs.db
 .env
 .env.local
 
+# TLS private keys — dev certs are generated via `make generate-certs`.
+# Never commit private keys; use your org's PKI in production.
+*.key
+certs/*.key
+
 # Generated binaries
 /server
 
