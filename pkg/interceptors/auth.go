@@ -34,8 +34,10 @@ func extractClientID(ctx context.Context) string {
 
 // Authenticator verifies API keys and compact HMAC-SHA256 JWTs at the gRPC boundary.
 type Authenticator struct {
-	jwtSecret []byte
-	apiKeys   [][]byte
+	jwtSecret   []byte
+	apiKeys     [][]byte
+	jwtAudience string
+	jwtIssuer   string
 }
 
 // NewAuthenticator builds a verifier from already validated configuration.
@@ -43,7 +45,11 @@ func NewAuthenticator(cfg config.AuthConfig) (*Authenticator, error) {
 	if strings.TrimSpace(cfg.JWTSecret) == "" && len(cfg.APIKeys) == 0 {
 		return nil, fmt.Errorf("no authentication credentials configured")
 	}
-	auth := &Authenticator{jwtSecret: []byte(cfg.JWTSecret)}
+	auth := &Authenticator{
+		jwtSecret:   []byte(cfg.JWTSecret),
+		jwtAudience: cfg.JWTAudience,
+		jwtIssuer:   cfg.JWTIssuer,
+	}
 	for _, key := range cfg.APIKeys {
 		if strings.TrimSpace(key) != "" {
 			auth.apiKeys = append(auth.apiKeys, []byte(key))
@@ -160,7 +166,49 @@ func (a *Authenticator) validJWT(token string) bool {
 			return false
 		}
 	}
+	if a.jwtIssuer != "" {
+		iss, _ := stringClaim(claims["iss"])
+		if iss != a.jwtIssuer {
+			return false
+		}
+	}
+	if a.jwtAudience != "" && !audienceMatches(claims["aud"], a.jwtAudience) {
+		return false
+	}
 	return true
+}
+
+// stringClaim decodes a JSON string claim.
+func stringClaim(raw json.RawMessage) (string, bool) {
+	if raw == nil {
+		return "", false
+	}
+	var s string
+	if err := json.Unmarshal(raw, &s); err != nil {
+		return "", false
+	}
+	return s, true
+}
+
+// audienceMatches reports whether the JWT "aud" claim (a string or an array of
+// strings per RFC 7519) contains want.
+func audienceMatches(raw json.RawMessage, want string) bool {
+	if raw == nil {
+		return false
+	}
+	if s, ok := stringClaim(raw); ok {
+		return s == want
+	}
+	var list []string
+	if err := json.Unmarshal(raw, &list); err != nil {
+		return false
+	}
+	for _, a := range list {
+		if a == want {
+			return true
+		}
+	}
+	return false
 }
 
 // jwtClockSkew tolerates small issuer/verifier clock differences on iat checks.
