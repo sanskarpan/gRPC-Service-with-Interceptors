@@ -27,7 +27,7 @@ server:
 tls:
   enabled: false
 auth:
-  jwt_secret: "test-secret"
+  jwt_secret: "test-secret-0123456789-0123456789"
   api_keys: []
 logging:
   level: "debug"
@@ -64,7 +64,7 @@ client:
 	if cfg.Server.Timeout != 30*time.Second || cfg.Server.MaxUsers != 1000 {
 		t.Fatalf("unexpected limits: %#v", cfg.Server)
 	}
-	if cfg.Auth.JWTSecret != "test-secret" || cfg.Reflection {
+	if cfg.Auth.JWTSecret != "test-secret-0123456789-0123456789" || cfg.Reflection {
 		t.Fatalf("unexpected auth/reflection config: %#v %v", cfg.Auth, cfg.Reflection)
 	}
 }
@@ -152,24 +152,24 @@ func writeConfigFile(t *testing.T, content string) string {
 func validBaseConfig() Config {
 	return Config{
 		Server: ServerConfig{
-			Host:                       "127.0.0.1",
-			Port:                       50051,
-			MaxConns:                   100,
-			Timeout:                    30 * time.Second,
-			MaxRecvMessageMB:          4,
-			MaxSendMessageMB:          4,
-			MaxUsers:                  1000,
-			MaxStreamMessages:         100,
-			MaxStringBytes:            1024,
-			StreamInterval:            time.Millisecond,
-			RateLimitPerSecond:         100,
-			RateLimitBurst:             200,
+			Host:                        "127.0.0.1",
+			Port:                        50051,
+			MaxConns:                    100,
+			Timeout:                     30 * time.Second,
+			MaxRecvMessageMB:            4,
+			MaxSendMessageMB:            4,
+			MaxUsers:                    1000,
+			MaxStreamMessages:           100,
+			MaxStringBytes:              1024,
+			StreamInterval:              time.Millisecond,
+			RateLimitPerSecond:          100,
+			RateLimitBurst:              200,
 			PerClientRateLimitPerSecond: 50,
 			PerClientRateLimitBurst:     100,
 		},
 		TLS: TLSConfig{Enabled: false},
 		Auth: AuthConfig{
-			JWTSecret: "this-is-a-long-enough-secret",
+			JWTSecret: "this-is-a-sufficiently-long-jwt-secret-0123456789",
 			APIKeys:   []string{},
 		},
 		Logging: LoggingConfig{Level: "info", Format: "json"},
@@ -188,6 +188,15 @@ func validBaseConfig() Config {
 			Cache:           CacheConfig{Enabled: false},
 		},
 		Client: ClientConfig{Address: "127.0.0.1:50051"},
+	}
+}
+
+func TestValidateShortJWTSecret(t *testing.T) {
+	cfg := validBaseConfig()
+	cfg.Auth.JWTSecret = "0123456789abcdef" // 16 bytes: too weak for HMAC-SHA256
+	cfg.Auth.APIKeys = nil
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("expected error for JWT secret shorter than 32 bytes")
 	}
 }
 
@@ -689,7 +698,7 @@ server:
 tls:
   enabled: false
 auth:
-  jwt_secret: "test-secret"
+  jwt_secret: "test-secret-0123456789-0123456789"
   api_keys: []
 logging:
   level: "info"
@@ -856,7 +865,7 @@ server:
 tls:
   enabled: false
 auth:
-  jwt_secret: "test-secret"
+  jwt_secret: "test-secret-0123456789-0123456789"
   api_keys: []
 logging:
   level: "info"
@@ -914,7 +923,7 @@ server:
 tls:
   enabled: false
 auth:
-  jwt_secret: "test-secret"
+  jwt_secret: "test-secret-0123456789-0123456789"
   api_keys: []
 logging:
   level: "info"
@@ -972,7 +981,7 @@ server:
 tls:
   enabled: false
 auth:
-  jwt_secret: "test-secret"
+  jwt_secret: "test-secret-0123456789-0123456789"
   api_keys: []
 logging:
   level: "info"
