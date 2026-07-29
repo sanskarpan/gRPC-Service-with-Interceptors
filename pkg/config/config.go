@@ -16,35 +16,35 @@ import (
 
 // Config is the complete runtime configuration for the gRPC service.
 type Config struct {
-	Server     ServerConfig    `yaml:"server"`
-	TLS        TLSConfig       `yaml:"tls"`
-	Auth       AuthConfig      `yaml:"auth"`
-	Logging    LoggingConfig   `yaml:"logging"`
-	Tracing    TracingConfig   `yaml:"tracing"`
-	Metrics    MetricsConfig   `yaml:"metrics"`
-	Health     HealthConfig    `yaml:"health"`
-	Storage    StorageConfig   `yaml:"storage"`
-	Gateway    GatewayConfig   `yaml:"gateway"`
-	Reflection bool            `yaml:"reflection"`
-	Client     ClientConfig    `yaml:"client"`
+	Server     ServerConfig  `yaml:"server"`
+	TLS        TLSConfig     `yaml:"tls"`
+	Auth       AuthConfig    `yaml:"auth"`
+	Logging    LoggingConfig `yaml:"logging"`
+	Tracing    TracingConfig `yaml:"tracing"`
+	Metrics    MetricsConfig `yaml:"metrics"`
+	Health     HealthConfig  `yaml:"health"`
+	Storage    StorageConfig `yaml:"storage"`
+	Gateway    GatewayConfig `yaml:"gateway"`
+	Reflection bool          `yaml:"reflection"`
+	Client     ClientConfig  `yaml:"client"`
 }
 
 // ServerConfig contains listener, deadline, and resource limits for gRPC.
 type ServerConfig struct {
-	Host                    string        `yaml:"host"`
-	Port                    int           `yaml:"port"`
-	MaxConns                int           `yaml:"max_conns"`
-	Timeout                 time.Duration `yaml:"timeout"`
-	MaxRecvMessageMB        int           `yaml:"max_recv_message_mb"`
-	MaxSendMessageMB        int           `yaml:"max_send_message_mb"`
-	MaxUsers                int           `yaml:"max_users"`
-	MaxStreamMessages       int           `yaml:"max_stream_messages"`
-	MaxStringBytes          int           `yaml:"max_string_bytes"`
-	StreamInterval          time.Duration `yaml:"stream_interval"`
-	RateLimitPerSecond      int           `yaml:"rate_limit_per_second"`
-	RateLimitBurst          int           `yaml:"rate_limit_burst"`
-	PerClientRateLimitPerSecond int       `yaml:"per_client_rate_limit_per_second"`
-	PerClientRateLimitBurst     int       `yaml:"per_client_rate_limit_burst"`
+	Host                        string        `yaml:"host"`
+	Port                        int           `yaml:"port"`
+	MaxConns                    int           `yaml:"max_conns"`
+	Timeout                     time.Duration `yaml:"timeout"`
+	MaxRecvMessageMB            int           `yaml:"max_recv_message_mb"`
+	MaxSendMessageMB            int           `yaml:"max_send_message_mb"`
+	MaxUsers                    int           `yaml:"max_users"`
+	MaxStreamMessages           int           `yaml:"max_stream_messages"`
+	MaxStringBytes              int           `yaml:"max_string_bytes"`
+	StreamInterval              time.Duration `yaml:"stream_interval"`
+	RateLimitPerSecond          int           `yaml:"rate_limit_per_second"`
+	RateLimitBurst              int           `yaml:"rate_limit_burst"`
+	PerClientRateLimitPerSecond int           `yaml:"per_client_rate_limit_per_second"`
+	PerClientRateLimitBurst     int           `yaml:"per_client_rate_limit_burst"`
 }
 
 // TLSConfig describes server-side TLS and optional mutual TLS validation.
@@ -69,7 +69,15 @@ type MTLSConfig struct {
 type AuthConfig struct {
 	JWTSecret string   `yaml:"jwt_secret"`
 	APIKeys   []string `yaml:"api_keys"`
+	// JWTAudience and JWTIssuer, when set, bind accepted JWTs to the expected
+	// aud/iss claims. Empty means the corresponding claim is not checked.
+	JWTAudience string `yaml:"jwt_audience"`
+	JWTIssuer   string `yaml:"jwt_issuer"`
 }
+
+// minJWTSecretBytes is the minimum HMAC-SHA256 key length. 256 bits matches the
+// hash output size; shorter keys weaken the MAC.
+const minJWTSecretBytes = 32
 
 // LoggingConfig controls the structured logger.
 type LoggingConfig struct {
@@ -92,8 +100,8 @@ type MetricsConfig struct {
 
 // GatewayConfig controls the REST-to-gRPC gateway listener.
 type GatewayConfig struct {
-	Enabled bool   `yaml:"enabled"`
-	Port    int    `yaml:"port"`
+	Enabled bool `yaml:"enabled"`
+	Port    int  `yaml:"port"`
 }
 
 // HealthConfig controls the liveness/readiness listener.
@@ -210,6 +218,9 @@ func (c *Config) Validate() error {
 	}
 	if strings.TrimSpace(c.Auth.JWTSecret) == "" && len(c.Auth.APIKeys) == 0 {
 		return fmt.Errorf("at least one auth.jwt_secret or auth.api_keys entry is required")
+	}
+	if s := c.Auth.JWTSecret; s != "" && len(s) < minJWTSecretBytes {
+		return fmt.Errorf("auth.jwt_secret must be at least %d bytes", minJWTSecretBytes)
 	}
 	for i, key := range c.Auth.APIKeys {
 		if len(key) < 16 {
