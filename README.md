@@ -139,8 +139,9 @@ TEST_DATABASE_URL='postgres://...' make test-postgres # real PostgreSQL reposito
 make e2e                  # Compose PostgreSQL + TLS + all-RPC network E2E
 ```
 
-The current CI coverage floor is 10%; it is intentionally a floor, not a
-claim that coverage alone proves correctness. Critical network behavior is
+The current CI coverage floor is 45% (total statements are around 49%); it is
+intentionally a floor, not a claim that coverage alone proves correctness.
+Critical network behavior is
 covered by the server lifecycle/authentication integration test, while the
 service and parser boundaries have table-driven, fuzz, concurrency, and
 benchmark coverage.
