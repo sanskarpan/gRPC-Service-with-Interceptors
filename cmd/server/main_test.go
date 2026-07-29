@@ -51,18 +51,18 @@ func newBaseTestConfig(t *testing.T) *config.Config {
 	healthPort := freePort(t)
 	return &config.Config{
 		Server: config.ServerConfig{
-			Host:                       "127.0.0.1",
-			Port:                       grpcPort,
-			MaxConns:                   10,
-			Timeout:                    3 * time.Second,
-			MaxRecvMessageMB:          1,
-			MaxSendMessageMB:          1,
-			MaxUsers:                  100,
-			MaxStreamMessages:         10,
-			MaxStringBytes:            256,
-			StreamInterval:            time.Millisecond,
-			RateLimitPerSecond:         100,
-			RateLimitBurst:             200,
+			Host:                        "127.0.0.1",
+			Port:                        grpcPort,
+			MaxConns:                    10,
+			Timeout:                     3 * time.Second,
+			MaxRecvMessageMB:            1,
+			MaxSendMessageMB:            1,
+			MaxUsers:                    100,
+			MaxStreamMessages:           10,
+			MaxStringBytes:              256,
+			StreamInterval:              time.Millisecond,
+			RateLimitPerSecond:          100,
+			RateLimitBurst:              200,
 			PerClientRateLimitPerSecond: 100,
 			PerClientRateLimitBurst:     200,
 		},
@@ -93,6 +93,7 @@ type runningServer struct {
 	runErr    <-chan error
 	healthURL string
 	grpcAddr  string
+	stopped   bool
 }
 
 // startTestServer runs run() in a goroutine and waits for /readyz to report
@@ -114,9 +115,15 @@ func startTestServer(t *testing.T, cfg *config.Config) *runningServer {
 }
 
 // Stop cancels the server context and asserts that run() returned without an
-// error within the configured shutdown window.
+// error within the configured shutdown window. It is idempotent: a second call
+// (e.g. an explicit Stop followed by a deferred Stop) is a no-op, since run()'s
+// result is delivered exactly once.
 func (s *runningServer) Stop(t *testing.T) {
 	t.Helper()
+	if s.stopped {
+		return
+	}
+	s.stopped = true
 	s.cancel()
 	select {
 	case err := <-s.runErr:
@@ -285,18 +292,18 @@ func TestRunStartsAndDrainsListeners(t *testing.T) {
 	healthPort := freePort(t)
 	cfg := &config.Config{
 		Server: config.ServerConfig{
-			Host:                       "127.0.0.1",
-			Port:                       grpcPort,
-			MaxConns:                   10,
-			Timeout:                    2 * time.Second,
-			MaxRecvMessageMB:          1,
-			MaxSendMessageMB:          1,
-			MaxUsers:                  10,
-			MaxStreamMessages:         2,
-			MaxStringBytes:            128,
-			StreamInterval:            time.Millisecond,
-			RateLimitPerSecond:         100,
-			RateLimitBurst:             200,
+			Host:                        "127.0.0.1",
+			Port:                        grpcPort,
+			MaxConns:                    10,
+			Timeout:                     2 * time.Second,
+			MaxRecvMessageMB:            1,
+			MaxSendMessageMB:            1,
+			MaxUsers:                    10,
+			MaxStreamMessages:           2,
+			MaxStringBytes:              128,
+			StreamInterval:              time.Millisecond,
+			RateLimitPerSecond:          100,
+			RateLimitBurst:              200,
 			PerClientRateLimitPerSecond: 100,
 			PerClientRateLimitBurst:     200,
 		},
@@ -330,18 +337,18 @@ func TestRunServesAuthenticatedRPCs(t *testing.T) {
 	const apiKey = "integration-api-key-12345"
 	cfg := &config.Config{
 		Server: config.ServerConfig{
-			Host:                       "127.0.0.1",
-			Port:                       grpcPort,
-			MaxConns:                   10,
-			Timeout:                    2 * time.Second,
-			MaxRecvMessageMB:          1,
-			MaxSendMessageMB:          1,
-			MaxUsers:                  10,
-			MaxStreamMessages:         2,
-			MaxStringBytes:            128,
-			StreamInterval:            time.Millisecond,
-			RateLimitPerSecond:         100,
-			RateLimitBurst:             200,
+			Host:                        "127.0.0.1",
+			Port:                        grpcPort,
+			MaxConns:                    10,
+			Timeout:                     2 * time.Second,
+			MaxRecvMessageMB:            1,
+			MaxSendMessageMB:            1,
+			MaxUsers:                    10,
+			MaxStreamMessages:           2,
+			MaxStringBytes:              128,
+			StreamInterval:              time.Millisecond,
+			RateLimitPerSecond:          100,
+			RateLimitBurst:              200,
 			PerClientRateLimitPerSecond: 100,
 			PerClientRateLimitBurst:     200,
 		},

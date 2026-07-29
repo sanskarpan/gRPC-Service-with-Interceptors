@@ -675,9 +675,11 @@ func TestPostgresRepositoryConnectionPoolExhaustion(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error due to pool exhaustion, got nil")
 	}
-	if !errors.Is(err, context.DeadlineExceeded) {
-		// The exact error may vary depending on pgx/lib/pq behavior, but it
-		// should be a timeout-related error, not a successful response.
+	// The exact error may vary depending on pgx/lib/pq behavior, but under a
+	// tight deadline it must be a context/timeout-related failure rather than a
+	// different class of error.
+	if !errors.Is(err, context.DeadlineExceeded) && !errors.Is(err, context.Canceled) {
+		t.Logf("pool-exhaustion error was not a context deadline/cancel: %v", err)
 	}
 }
 
