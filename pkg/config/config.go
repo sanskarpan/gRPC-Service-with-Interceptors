@@ -90,6 +90,10 @@ type TracingConfig struct {
 	Enabled     bool   `yaml:"enabled"`
 	Endpoint    string `yaml:"endpoint"`
 	ServiceName string `yaml:"service_name"`
+	// SampleRatio is the head-based sampling probability in [0,1] for root
+	// spans (parent-based sampling always respects an upstream decision). A
+	// value <= 0 is treated as 1.0 (always sample) for backward compatibility.
+	SampleRatio float64 `yaml:"sample_ratio"`
 }
 
 // MetricsConfig controls the Prometheus listener.
