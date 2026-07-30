@@ -1,0 +1,43 @@
+# promtool unit tests for alerting-rules.yml.
+# Run with: promtool test rules test/deployment/prometheus/alerting-rules_test.yml
+# These tests pin the alert rules to the metric series the service actually
+# emits (grpc_server_total_requests / _total_errors /
+# _request_duration_seconds_bucket / _active_streams), so a future rename on
+# either side is caught in CI instead of silently disabling alerting.
+rule_files:
+  - alerting-rules.yml
+
+evaluation_interval: 1m
+
+tests:
+  # 10% error ratio must raise HighErrorRate (threshold 5%).
+  - interval: 1m
+    input_series:
+      - series: 'grpc_server_total_requests{method="/example.v1.UserService/GetUser"}'
+        values: '0+100x15'
+      - series: 'grpc_server_total_errors{method="/example.v1.UserService/GetUser",code="Internal"}'
+        values: '0+10x15'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: HighErrorRate
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              method: "/example.v1.UserService/GetUser"
+
+  # A saturated pool must raise DBPoolExhaustion (<=1 free connection).
+  - interval: 1m
+    input_series:
+      - series: 'grpc_db_max_open_connections{instance="a"}'
+        values: '10x5'
+      - series: 'grpc_db_in_use_connections{instance="a"}'
+        values: '10x5'
+      - series: 'grpc_db_idle_connections{instance="a"}'
+        values: '0x5'
+    alert_rule_test:
+      - eval_time: 3m
+        alertname: DBPoolExhaustion
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              instance: "a"
