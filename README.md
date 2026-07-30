@@ -6,15 +6,29 @@ reproducible development/deployment tooling.
 
 📚 **Documentation site:** https://sanskarpan.github.io/gRPC-Service-with-Interceptors/
 
-## Demo
+## Walkthrough
 
-The server, the example client (unary + streaming RPCs), health and metrics —
-end to end:
+A full end-to-end walkthrough — starting the authenticated server, health and
+readiness probes, the example client driving unary + streaming RPCs, Prometheus
+metrics, and the request-builder UI:
 
-![Server and client demo](docs/assets/demo.gif)
+[![Project walkthrough](docs/assets/walkthrough.gif)](docs/assets/walkthrough.mp4)
 
-> Reproduce it yourself: `./scripts/demo/run.sh` (builds are in `bin/`, or run
-> `go build -o bin/server ./cmd/server && go build -o bin/client ./cmd/client`).
+▶ **[Watch the full-quality MP4](docs/assets/walkthrough.mp4)** (terminal + UI, ~47s).
+Reproduce the terminal part with `./scripts/demo/run.sh` (or
+`go build -o bin/server ./cmd/server && go build -o bin/client ./cmd/client`).
+
+### Frontend (request-builder UI)
+
+| Method tree & editor | Unary create → `200 OK` |
+| --- | --- |
+| ![UI home](docs/assets/ui-home.png) | ![Create user response](docs/assets/ui-response.png) |
+| **Filled request** | **Streaming RPC** |
+| ![Create request](docs/assets/ui-create.png) | ![Stream events](docs/assets/ui-stream.png) |
+
+The browser UI is an intentional demo-mode request builder (it simulates
+responses locally); the real gRPC traffic in the walkthrough is server ↔ client.
+See [Frontend](#frontend).
 
 ## System map
 
