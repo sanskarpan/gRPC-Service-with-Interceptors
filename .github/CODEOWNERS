@@ -1,0 +1,9 @@
+# Default owners for everything in the repo.
+* @sanskarpan
+
+# Security-sensitive areas warrant extra review.
+/pkg/interceptors/       @sanskarpan
+/cmd/server/             @sanskarpan
+/.github/                @sanskarpan
+/Dockerfile              @sanskarpan
+/test/deployment/        @sanskarpan
