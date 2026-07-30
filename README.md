@@ -4,7 +4,37 @@ An authenticated Go gRPC service with bounded request handling, TLS/mTLS,
 structured logs, Prometheus metrics, OpenTelemetry tracing, health probes, and
 reproducible development/deployment tooling.
 
+📚 **Documentation site:** https://sanskarpan.github.io/gRPC-Service-with-Interceptors/
+
+## Demo
+
+The server, the example client (unary + streaming RPCs), health and metrics —
+end to end:
+
+![Server and client demo](docs/assets/demo.gif)
+
+> Reproduce it yourself: `./scripts/demo/run.sh` (builds are in `bin/`, or run
+> `go build -o bin/server ./cmd/server && go build -o bin/client ./cmd/client`).
+
 ## System map
+
+```mermaid
+flowchart LR
+  client([gRPC client]) -- TLS/mTLS --> chain
+  subgraph chain[Interceptor chain]
+    direction TB
+    r[recovery] --> log[logging] --> met[metrics] --> rl[rate limit] --> auth[auth] --> to[timeout]
+  end
+  to --> svc[UserService]
+  svc --> repo{repository}
+  repo --> mem[(memory · dev/test)]
+  repo --> pg[(PostgreSQL · prod)]
+  client -. HTTP :8080 .-> health[/healthz · /readyz/]
+  client -. HTTP :9090 .-> metrics[/metrics · Prometheus/]
+  svc -. OTLP/HTTP .-> otel[(trace collector · optional)]
+```
+
+<details><summary>Text version</summary>
 
 ```text
 gRPC client ── TLS/mTLS ──► recovery → logging → metrics → rate limit
@@ -18,6 +48,8 @@ HTTP :8080 ── /healthz, /readyz ──► liveness/readiness
 HTTP :9090 ── /metrics ───────────► Prometheus
 OTLP/HTTP ────────────────────────► configured collector (optional)
 ```
+
+</details>
 
 The browser frontend is intentionally a demo-mode request-builder UI. It
 simulates responses locally and does not send browser traffic to the gRPC
@@ -149,6 +181,8 @@ benchmark coverage.
 ## Frontend
 
 The Next.js app runs independently on port `3001`:
+
+![Frontend request-builder UI](docs/assets/frontend.png)
 
 ```sh
 make frontend-install
