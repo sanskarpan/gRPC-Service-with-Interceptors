@@ -299,6 +299,15 @@ type mockRepository struct {
 
 func (m *mockRepository) Ping(ctx context.Context) error { return nil }
 func (m *mockRepository) Close() error                   { return nil }
+func (m *mockRepository) CreateWithIdempotency(ctx context.Context, user *pb.User, maxUsers int, key string) (*pb.User, bool, error) {
+	if m.createFn != nil {
+		if err := m.createFn(ctx, user, maxUsers); err != nil {
+			return nil, false, err
+		}
+	}
+	return user, false, nil
+}
+
 func (m *mockRepository) List(ctx context.Context, limit int, afterID string) ([]*pb.User, string, error) {
 	if m.listFn == nil {
 		return nil, "", nil
