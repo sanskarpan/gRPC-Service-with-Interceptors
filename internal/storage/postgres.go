@@ -23,9 +23,11 @@ import (
 
 const userCapacityLock int64 = 0x677270635f757365
 
-const defaultRetryAttempts = 3
-const defaultRetryBackoff = 250 * time.Millisecond
-const defaultRetryMaxBackoff = 5 * time.Second
+const (
+	defaultRetryAttempts   = 3
+	defaultRetryBackoff    = 250 * time.Millisecond
+	defaultRetryMaxBackoff = 5 * time.Second
+)
 
 // migrationFiles keeps schema changes versioned with the binary that applies
 // them, so every deployment uses the same SQL instead of an ad hoc startup
@@ -38,14 +40,14 @@ var migrationFiles embed.FS
 // PostgreSQL. Zero-valued retry fields fall back to safe runtime defaults in
 // NewPostgresRepository.
 type PostgresConfig struct {
-	URL              string
-	MaxOpenConns     int
-	MaxIdleConns     int
-	ConnMaxLifetime  time.Duration
-	PingTimeout      time.Duration
-	RetryAttempts    int
-	RetryBackoff     time.Duration
-	RetryMaxBackoff  time.Duration
+	URL             string
+	MaxOpenConns    int
+	MaxIdleConns    int
+	ConnMaxLifetime time.Duration
+	PingTimeout     time.Duration
+	RetryAttempts   int
+	RetryBackoff    time.Duration
+	RetryMaxBackoff time.Duration
 }
 
 // PostgresRepository stores users in PostgreSQL with a versioned bootstrap

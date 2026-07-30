@@ -273,6 +273,7 @@ func (s *fakeChatStream) SendMsg(m any) error {
 	s.sent = append(s.sent, m.(*pb.ChatMessage))
 	return nil
 }
+
 func (s *fakeChatStream) RecvMsg(m any) error {
 	if s.recvErr != nil {
 		return s.recvErr
@@ -304,18 +305,23 @@ func (m *mockRepository) List(ctx context.Context, limit int, afterID string) ([
 	}
 	return m.listFn(ctx, limit, afterID)
 }
+
 func (m *mockRepository) Get(ctx context.Context, id string) (*pb.User, error) {
 	return m.getFn(ctx, id)
 }
+
 func (m *mockRepository) Create(ctx context.Context, user *pb.User, maxUsers int) error {
 	return m.createFn(ctx, user, maxUsers)
 }
+
 func (m *mockRepository) Update(ctx context.Context, user *pb.User) error {
 	return m.updateFn(ctx, user)
 }
+
 func (m *mockRepository) Delete(ctx context.Context, id string) error {
 	return m.deleteFn(ctx, id)
 }
+
 func (m *mockRepository) ReadModifyUpdate(ctx context.Context, id string, mutate storage.ReadModifyUpdateFn) (*pb.User, error) {
 	if m.rmuFn != nil {
 		return m.rmuFn(ctx, id, mutate)
@@ -1106,11 +1112,11 @@ func TestNewUserServiceWithRepositoryNormalizesLimits(t *testing.T) {
 
 func TestMapStorageError(t *testing.T) {
 	tests := []struct {
-		name          string
-		input         error
-		wantCode      codes.Code
-		wantMsg       string
-		wantErrorsIs  error
+		name         string
+		input        error
+		wantCode     codes.Code
+		wantMsg      string
+		wantErrorsIs error
 	}{
 		{name: "context canceled", input: context.Canceled, wantCode: codes.Canceled, wantMsg: "context canceled", wantErrorsIs: context.Canceled},
 		{name: "deadline exceeded", input: context.DeadlineExceeded, wantCode: codes.DeadlineExceeded, wantMsg: "context deadline exceeded", wantErrorsIs: context.DeadlineExceeded},

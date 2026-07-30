@@ -98,7 +98,7 @@ groups:
         labels:
           severity: warning
         annotations:
-          summary: "Abnormal request rate on {{ $methods }}"
+          summary: "Abnormal request rate on {{ $labels.method }}"
           description: "Request rate deviation exceeds 2 sigma on {{ $labels.method }}"
 
       # Database connection pool saturation
