@@ -306,14 +306,17 @@ jobs:
           wait "$pid" || true
 
       - name: Scan image
-        uses: aquasecurity/trivy-action@0.28.0
-        with:
-          image-ref: grpc-service:ci
-          format: table
-          exit-code: "1"
-          ignore-unfixed: true
-          vuln-type: os,library
-          severity: CRITICAL,HIGH
+        # Install Trivy from its official script rather than pinning an action
+        # tag that can be un-published (as 0.28.0 was); fail on CRITICAL/HIGH.
+        run: |
+          curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh \
+            | sh -s -- -b /usr/local/bin
+          trivy image \
+            --exit-code 1 \
+            --ignore-unfixed \
+            --pkg-types os,library \
+            --severity CRITICAL,HIGH \
+            grpc-service:ci
 
   publish:
     name: Publish signed image (GHCR)
