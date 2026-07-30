@@ -15,12 +15,53 @@ import (
 type MemoryRepository struct {
 	mu     sync.RWMutex
 	users  map[string]*pb.User
+	idem   map[string]string // idempotency key -> user id
 	closed bool
 }
 
 // NewMemoryRepository constructs an empty process-local repository.
 func NewMemoryRepository() *MemoryRepository {
-	return &MemoryRepository{users: make(map[string]*pb.User)}
+	return &MemoryRepository{
+		users: make(map[string]*pb.User),
+		idem:  make(map[string]string),
+	}
+}
+
+// CreateWithIdempotency creates the user, or on a replay of idempotencyKey
+// returns the previously created user without creating a duplicate.
+func (r *MemoryRepository) CreateWithIdempotency(ctx context.Context, user *pb.User, maxUsers int, idempotencyKey string) (*pb.User, bool, error) {
+	if err := contextError(ctx); err != nil {
+		return nil, false, err
+	}
+	if idempotencyKey == "" {
+		if err := r.Create(ctx, user, maxUsers); err != nil {
+			return nil, false, err
+		}
+		return proto.Clone(user).(*pb.User), false, nil
+	}
+	if user == nil || user.GetId() == "" {
+		return nil, false, ErrInvalid
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.closed {
+		return nil, false, ErrUnavailable
+	}
+	if existingID, ok := r.idem[idempotencyKey]; ok {
+		if existing, ok := r.users[existingID]; ok {
+			return proto.Clone(existing).(*pb.User), true, nil
+		}
+		// Key recorded but user gone (e.g. deleted); treat as a fresh create.
+	}
+	if len(r.users) >= maxUsers {
+		return nil, false, ErrCapacity
+	}
+	if _, exists := r.users[user.GetId()]; exists {
+		return nil, false, ErrAlreadyExists
+	}
+	r.users[user.GetId()] = proto.Clone(user).(*pb.User)
+	r.idem[idempotencyKey] = user.GetId()
+	return proto.Clone(user).(*pb.User), false, nil
 }
 
 // Create stores a cloned user unless maxUsers has already been reached.
