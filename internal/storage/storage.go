@@ -18,6 +18,11 @@ import (
 // operations.
 type Repository interface {
 	Create(context.Context, *pb.User, int) error
+	// CreateWithIdempotency behaves like Create, but when idempotencyKey is
+	// non-empty a retry with the same key returns the previously created user
+	// (replayed=true) instead of creating a duplicate. An empty key behaves
+	// exactly like Create.
+	CreateWithIdempotency(ctx context.Context, user *pb.User, maxUsers int, idempotencyKey string) (stored *pb.User, replayed bool, err error)
 	Get(context.Context, string) (*pb.User, error)
 	Update(context.Context, *pb.User) error
 	ReadModifyUpdate(context.Context, string, ReadModifyUpdateFn) (*pb.User, error)

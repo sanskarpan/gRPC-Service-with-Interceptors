@@ -47,7 +47,9 @@ jobs:
       - name: Check gofumpt formatting
         run: |
           go install mvdan.cc/gofumpt@latest
-          unformatted="$("$(go env GOPATH)/bin/gofumpt" -l . 2>/dev/null | grep -v vendor/ || true)"
+          # Exclude vendored deps and generated protobuf code (pkg/pb), which is
+          # produced by protoc-gen-* and not authored/formatted by hand.
+          unformatted="$("$(go env GOPATH)/bin/gofumpt" -l . 2>/dev/null | grep -v -e '^vendor/' -e '^pkg/pb/' || true)"
           if [ -n "$unformatted" ]; then
             echo "The following files are not gofumpt-formatted:"
             echo "$unformatted"

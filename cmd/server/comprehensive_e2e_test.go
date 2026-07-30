@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/hmac"
 	"crypto/sha256"
+	"database/sql"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -14,6 +15,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	_ "github.com/jackc/pgx/v5/stdlib"
 
 	"github.com/example/grpc-service/pkg/config"
 	"github.com/example/grpc-service/pkg/pb"
@@ -1477,7 +1480,7 @@ func TestE2E_Postgres_RestartRecovers(t *testing.T) {
 	cfg2.Storage.RetryAttempts = 2
 	cfg2.Storage.RetryBackoff = time.Second
 
-	server2, err2 := startPostgresServer(t, cfg2)
+	server2, err2 := restartPostgresServer(t, cfg2)
 	if err2 != nil {
 		t.Skipf("postgres not available on restart: %v", err2)
 	}
@@ -1521,7 +1524,7 @@ func TestE2E_Postgres_MigrationsIdempotent(t *testing.T) {
 	cfg2.Storage.RetryAttempts = 2
 	cfg2.Storage.RetryBackoff = time.Second
 
-	server2, err2 := startPostgresServer(t, cfg2)
+	server2, err2 := restartPostgresServer(t, cfg2)
 	if err2 != nil {
 		t.Skipf("postgres not available on second start: %v", err2)
 	}
@@ -1630,7 +1633,31 @@ func signJWTPayload(secret string, header, payload map[string]any) string {
 }
 
 // startPostgresServer attempts to start a server with Postgres backend.
+// resetPostgresData truncates mutable tables so each Postgres e2e test starts
+// from a clean slate. Errors (e.g. tables not yet created) are ignored.
+func resetPostgresData(t *testing.T, url string) {
+	t.Helper()
+	db, err := sql.Open("pgx", url)
+	if err != nil {
+		return
+	}
+	defer func() { _ = db.Close() }()
+	_, _ = db.Exec("TRUNCATE users CASCADE")
+}
+
+// startPostgresServer starts a postgres-backed server and truncates existing
+// data so the test is isolated from earlier runs.
 func startPostgresServer(t *testing.T, cfg *config.Config) (*runningServer, error) {
+	return startPostgresServerOpts(t, cfg, true)
+}
+
+// restartPostgresServer starts a postgres-backed server WITHOUT truncating, so
+// tests that verify data survives a restart keep the previously stored rows.
+func restartPostgresServer(t *testing.T, cfg *config.Config) (*runningServer, error) {
+	return startPostgresServerOpts(t, cfg, false)
+}
+
+func startPostgresServerOpts(t *testing.T, cfg *config.Config, reset bool) (*runningServer, error) {
 	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
 	errCh := make(chan error, 1)
@@ -1649,6 +1676,12 @@ func startPostgresServer(t *testing.T, cfg *config.Config) (*runningServer, erro
 		if pollErr == nil {
 			resp.Body.Close()
 			if resp.StatusCode == http.StatusOK {
+				// Isolate this test from data left by earlier runs sharing the
+				// same database (the schema persists via schema_migrations).
+				// Restarts pass reset=false so persisted data survives.
+				if reset {
+					resetPostgresData(t, cfg.Storage.URL)
+				}
 				return &runningServer{
 					cancel:    cancel,
 					runErr:    errCh,

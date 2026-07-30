@@ -501,6 +501,97 @@ INSERT INTO users (id, name, email, age, created_at, updated_at)
 	})
 }
 
+// CreateWithIdempotency creates the user, or on a replay of idempotencyKey
+// returns the previously created user. The whole check-and-insert runs inside a
+// single transaction under the shared capacity advisory lock, so concurrent
+// creates with the same key cannot produce a duplicate.
+func (r *PostgresRepository) CreateWithIdempotency(ctx context.Context, user *pb.User, maxUsers int, idempotencyKey string) (stored *pb.User, replayed bool, err error) {
+	if idempotencyKey == "" {
+		if cerr := r.Create(ctx, user, maxUsers); cerr != nil {
+			return nil, false, cerr
+		}
+		return proto.Clone(user).(*pb.User), false, nil
+	}
+	if user == nil || user.GetId() == "" || user.GetName() == "" || user.GetEmail() == "" {
+		return nil, false, ErrInvalid
+	}
+	err = retryOperation(ctx, r.retryCfg(), func(ctx context.Context) error {
+		createdAt, updatedAt, terr := userTimes(user)
+		if terr != nil {
+			return terr
+		}
+		tx, terr := r.db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelReadCommitted})
+		if terr != nil {
+			return fmt.Errorf("begin idempotent create: %w", terr)
+		}
+		defer func() { _ = tx.Rollback() }()
+		if _, terr := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock($1)`, userCapacityLock); terr != nil {
+			return fmt.Errorf("lock user capacity: %w", terr)
+		}
+
+		// Replay: return the user recorded for this key, if any.
+		var existingID string
+		switch serr := tx.QueryRowContext(ctx, `SELECT user_id FROM idempotency_keys WHERE key = $1`, idempotencyKey).Scan(&existingID); {
+		case serr == nil:
+			u, gerr := scanUserTx(ctx, tx, existingID)
+			if gerr != nil {
+				return gerr
+			}
+			stored, replayed = u, true
+			return tx.Commit()
+		case errors.Is(serr, sql.ErrNoRows):
+			// fall through to create
+		default:
+			return fmt.Errorf("lookup idempotency key: %w", serr)
+		}
+
+		var count int
+		if serr := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM users`).Scan(&count); serr != nil {
+			return fmt.Errorf("count users: %w", serr)
+		}
+		if count >= maxUsers {
+			return ErrCapacity
+		}
+		if _, ierr := tx.ExecContext(ctx, `
+INSERT INTO users (id, name, email, age, created_at, updated_at)
+	VALUES ($1, $2, $3, $4, $5, $6)`, user.GetId(), user.GetName(), user.GetEmail(), user.GetAge(), createdAt, updatedAt); ierr != nil {
+			if isUniqueViolation(ierr) {
+				return ErrAlreadyExists
+			}
+			return fmt.Errorf("insert user: %w", ierr)
+		}
+		if _, ierr := tx.ExecContext(ctx, `INSERT INTO idempotency_keys (key, user_id) VALUES ($1, $2)`, idempotencyKey, user.GetId()); ierr != nil {
+			return fmt.Errorf("insert idempotency key: %w", ierr)
+		}
+		if cerr := tx.Commit(); cerr != nil {
+			return fmt.Errorf("commit idempotent create: %w", cerr)
+		}
+		stored, replayed = proto.Clone(user).(*pb.User), false
+		return nil
+	})
+	if err != nil {
+		return nil, false, err
+	}
+	return stored, replayed, nil
+}
+
+// scanUserTx loads a single user by id within a transaction.
+func scanUserTx(ctx context.Context, tx *sql.Tx, id string) (*pb.User, error) {
+	u := &pb.User{}
+	var createdAt, updatedAt time.Time
+	err := tx.QueryRowContext(ctx, `SELECT id, name, email, age, created_at, updated_at FROM users WHERE id = $1`, id).
+		Scan(&u.Id, &u.Name, &u.Email, &u.Age, &createdAt, &updatedAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("load user: %w", err)
+	}
+	u.CreatedAt = timestamppb.New(createdAt)
+	u.UpdatedAt = timestamppb.New(updatedAt)
+	return u, nil
+}
+
 // Get loads a user and maps SQL absence to ErrNotFound.
 func (r *PostgresRepository) Get(ctx context.Context, id string) (user *pb.User, err error) {
 	err = retryOperation(ctx, r.retryCfg(), func(ctx context.Context) error {

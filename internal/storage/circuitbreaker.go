@@ -199,6 +199,15 @@ func (cb *CircuitBreakerRepository) Create(ctx context.Context, user *pb.User, m
 	return err
 }
 
+func (cb *CircuitBreakerRepository) CreateWithIdempotency(ctx context.Context, user *pb.User, maxUsers int, idempotencyKey string) (*pb.User, bool, error) {
+	if err := cb.beforeCall(); err != nil {
+		return nil, false, err
+	}
+	u, replayed, err := cb.Repository.CreateWithIdempotency(ctx, user, maxUsers, idempotencyKey)
+	cb.afterCall(err)
+	return u, replayed, err
+}
+
 func (cb *CircuitBreakerRepository) Get(ctx context.Context, id string) (*pb.User, error) {
 	if err := cb.beforeCall(); err != nil {
 		return nil, err

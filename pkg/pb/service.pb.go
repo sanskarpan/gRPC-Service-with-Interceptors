@@ -69,12 +69,15 @@ func (x *GetUserRequest) GetId() string {
 }
 
 type CreateUserRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
-	Email         string                 `protobuf:"bytes,2,opt,name=email,proto3" json:"email,omitempty"`
-	Age           int32                  `protobuf:"varint,3,opt,name=age,proto3" json:"age,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Name  string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Email string                 `protobuf:"bytes,2,opt,name=email,proto3" json:"email,omitempty"`
+	Age   int32                  `protobuf:"varint,3,opt,name=age,proto3" json:"age,omitempty"`
+	// Optional idempotency key. When set, retrying CreateUser with the same key
+	// returns the originally created user instead of creating a duplicate.
+	IdempotencyKey string `protobuf:"bytes,4,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *CreateUserRequest) Reset() {
@@ -126,6 +129,13 @@ func (x *CreateUserRequest) GetAge() int32 {
 		return x.Age
 	}
 	return 0
+}
+
+func (x *CreateUserRequest) GetIdempotencyKey() string {
+	if x != nil {
+		return x.IdempotencyKey
+	}
+	return ""
 }
 
 type UpdateUserRequest struct {
@@ -755,11 +765,12 @@ const file_service_proto_rawDesc = "" +
 	"\rservice.proto\x12\n" +
 	"example.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x1bgoogle/protobuf/empty.proto\x1a\x1cgoogle/api/annotations.proto\" \n" +
 	"\x0eGetUserRequest\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\"O\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\"x\n" +
 	"\x11CreateUserRequest\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x14\n" +
 	"\x05email\x18\x02 \x01(\tR\x05email\x12\x10\n" +
-	"\x03age\x18\x03 \x01(\x05R\x03age\"_\n" +
+	"\x03age\x18\x03 \x01(\x05R\x03age\x12'\n" +
+	"\x0fidempotency_key\x18\x04 \x01(\tR\x0eidempotencyKey\"_\n" +
 	"\x11UpdateUserRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x14\n" +
