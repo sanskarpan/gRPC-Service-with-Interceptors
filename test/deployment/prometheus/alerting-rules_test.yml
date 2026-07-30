@@ -24,6 +24,9 @@ tests:
           - exp_labels:
               severity: critical
               method: "/example.v1.UserService/GetUser"
+            exp_annotations:
+              summary: "High error rate on /example.v1.UserService/GetUser"
+              description: "Error rate on /example.v1.UserService/GetUser is 10% over 5m"
 
   # A saturated pool must raise DBPoolExhaustion (<=1 free connection).
   - interval: 1m
@@ -41,3 +44,6 @@ tests:
           - exp_labels:
               severity: warning
               instance: "a"
+            exp_annotations:
+              summary: "Database connection pool near exhaustion"
+              description: "Instance a has 0 available connections remaining"

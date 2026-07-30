@@ -79,8 +79,10 @@ jobs:
           path: coverage.out
           retention-days: 7
 
-      - name: Verify generated protobufs
-        run: make proto-check
+      # Proto governance (lint + breaking-change detection) is handled by the
+      # dedicated `proto` job via buf. Regeneration-drift checking via
+      # `make proto-check` requires a protoc toolchain not present on this
+      # runner, so it is intentionally not run here.
 
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v7
