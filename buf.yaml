@@ -1,0 +1,24 @@
+version: v2
+modules:
+  - path: proto
+lint:
+  # BASIC catches real problems (imports, syntax, package hygiene) without
+  # demanding breaking renames of the already-published example.v1 API that
+  # STANDARD would require. health.proto is the upstream gRPC health schema and
+  # the google/ tree is vendored, so both are excluded. The two directory-layout
+  # rules are excepted because the repo uses a deliberate flat proto/ layout.
+  use:
+    - BASIC
+  except:
+    - DIRECTORY_SAME_PACKAGE
+    - PACKAGE_DIRECTORY_MATCH
+  ignore:
+    - proto/google
+    - proto/health.proto
+breaking:
+  # Compatibility is the primary governance goal: catch accidental
+  # wire-breaking changes to the published API in CI.
+  use:
+    - FILE
+  ignore:
+    - proto/google
