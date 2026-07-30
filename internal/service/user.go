@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	crand "crypto/rand"
+	"encoding/base64"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -111,6 +112,69 @@ func (s *UserService) GetUser(ctx context.Context, req *pb.GetUserRequest) (*pb.
 		return nil, mapStorageError(err)
 	}
 	return user, nil
+}
+
+// Page-size bounds for ListUsers.
+const (
+	defaultPageSize = 50
+	maxPageSize     = 1000
+)
+
+// ListUsers returns a page of users ordered by id. page_size is clamped to
+// [1, maxPageSize] (0 means the default); page_token is the opaque continuation
+// token returned by a previous call.
+func (s *UserService) ListUsers(ctx context.Context, req *pb.ListUsersRequest) (*pb.ListUsersResponse, error) {
+	if err := validateContext(ctx); err != nil {
+		return nil, err
+	}
+	if req == nil {
+		return nil, appErrors.ErrInvalidArgument("request is required")
+	}
+	if s.repository == nil {
+		return nil, mapStorageError(storage.ErrUnavailable)
+	}
+
+	size := int(req.GetPageSize())
+	switch {
+	case size <= 0:
+		size = defaultPageSize
+	case size > maxPageSize:
+		size = maxPageSize
+	}
+
+	afterID, err := decodePageToken(req.GetPageToken())
+	if err != nil {
+		return nil, appErrors.ErrInvalidArgument("invalid page_token")
+	}
+
+	users, next, err := s.repository.List(ctx, size, afterID)
+	if err != nil {
+		return nil, mapStorageError(err)
+	}
+	return &pb.ListUsersResponse{
+		Users:         users,
+		NextPageToken: encodePageToken(next),
+	}, nil
+}
+
+// encodePageToken renders a keyset cursor as an opaque token ("" stays empty).
+func encodePageToken(afterID string) string {
+	if afterID == "" {
+		return ""
+	}
+	return base64.RawURLEncoding.EncodeToString([]byte(afterID))
+}
+
+// decodePageToken reverses encodePageToken; an empty token means "from start".
+func decodePageToken(token string) (string, error) {
+	if token == "" {
+		return "", nil
+	}
+	raw, err := base64.RawURLEncoding.DecodeString(token)
+	if err != nil {
+		return "", err
+	}
+	return string(raw), nil
 }
 
 // CreateUser validates and stores a user until the bounded in-memory capacity
