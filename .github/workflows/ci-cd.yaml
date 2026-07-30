@@ -363,15 +363,21 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      # Container image references must be lowercase; github.repository can be
+      # mixed-case, so derive a lowercase name for cosign and the attestation.
+      - name: Lowercase image name
+        id: img
+        run: echo "name=ghcr.io/$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
+
       - name: Sign the image (keyless cosign)
         env:
           DIGEST: ${{ steps.build.outputs.digest }}
-        run: cosign sign --yes "ghcr.io/${{ github.repository }}@${DIGEST}"
+        run: cosign sign --yes "${{ steps.img.outputs.name }}@${DIGEST}"
 
       - name: Attest SLSA build provenance
         uses: actions/attest-build-provenance@v1
         with:
-          subject-name: ghcr.io/${{ github.repository }}
+          subject-name: ${{ steps.img.outputs.name }}
           subject-digest: ${{ steps.build.outputs.digest }}
           push-to-registry: true
 
