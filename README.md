@@ -4,30 +4,33 @@ An authenticated Go gRPC service with bounded request handling, TLS/mTLS,
 structured logs, Prometheus metrics, OpenTelemetry tracing, health probes, and
 reproducible development/deployment tooling.
 
-📚 **Documentation site:** https://sanskarpan.github.io/gRPC-Service-with-Interceptors/
+**Documentation site:** https://sanskarpan.github.io/gRPC-Service-with-Interceptors/
 
 ## Walkthrough
 
 A full end-to-end walkthrough — starting the authenticated server, health and
 readiness probes, the example client driving unary + streaming RPCs, Prometheus
-metrics, and the request-builder UI:
+metrics, and **Signal**, the request-builder console:
 
 [![Project walkthrough](docs/assets/walkthrough.gif)](docs/assets/walkthrough.mp4)
 
-▶ **[Watch the full-quality MP4](docs/assets/walkthrough.mp4)** (terminal + UI, ~47s).
+**[Watch the full-quality MP4](docs/assets/walkthrough.mp4)** (terminal + UI, ~44s).
 Reproduce the terminal part with `./scripts/demo/run.sh` (or
 `go build -o bin/server ./cmd/server && go build -o bin/client ./cmd/client`).
 
-### Frontend (request-builder UI)
+### Signal — the request-builder console
 
-| Method tree & editor | Unary create → `200 OK` |
+A precision console for the UserService: browse methods, compose requests, and
+inspect unary and streaming responses.
+
+| Method browser + JSON editor | Unary create, `200 OK` |
 | --- | --- |
-| ![UI home](docs/assets/ui-home.png) | ![Create user response](docs/assets/ui-response.png) |
-| **Filled request** | **Streaming RPC** |
-| ![Create request](docs/assets/ui-create.png) | ![Stream events](docs/assets/ui-stream.png) |
+| ![Console home](docs/assets/ui-home.png) | ![Create user response](docs/assets/ui-response.png) |
+| **Server-streaming events** | |
+| ![Streaming events](docs/assets/ui-stream.png) | |
 
-The browser UI is an intentional demo-mode request builder (it simulates
-responses locally); the real gRPC traffic in the walkthrough is server ↔ client.
+The browser console is an intentional demo-mode request builder (it simulates
+responses locally); the real gRPC traffic in the walkthrough is server-to-client.
 See [Frontend](#frontend).
 
 ## System map
