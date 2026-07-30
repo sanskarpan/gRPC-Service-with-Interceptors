@@ -289,7 +289,7 @@ jobs:
           docker run --rm --read-only --tmpfs /tmp/grpc:rw,nosuid,nodev,size=32m \
             -p 8080:8080 \
             -e TLS_ENABLED=false \
-            -e JWT_SECRET=ci-smoke-secret-not-for-prod \
+            -e JWT_SECRET=ci-smoke-secret-not-for-prod-0123456789 \
             -e AUTH_API_KEYS=ci-smoke-api-key-not-for-prod \
             -e METRICS_ENABLED=false \
             grpc-service:ci &
