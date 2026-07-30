@@ -70,6 +70,9 @@ message CreateUserRequest {
   string name = 1;
   string email = 2;
   int32 age = 3;
+  // Optional idempotency key. When set, retrying CreateUser with the same key
+  // returns the originally created user instead of creating a duplicate.
+  string idempotency_key = 4;
 }
 
 message UpdateUserRequest {
