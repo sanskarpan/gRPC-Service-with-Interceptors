@@ -57,6 +57,7 @@ func TestStreamLoggingIncludesRequestID(t *testing.T) {
 		t.Fatalf("expected trace_id in stream logs, got:\n%s", out)
 	}
 }
+
 func TestTraceIDFromContext(t *testing.T) {
 	if got := traceIDFromContext(context.Background()); got != "" {
 		t.Fatalf("expected empty trace id without span, got %q", got)
