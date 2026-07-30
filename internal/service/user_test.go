@@ -293,10 +293,17 @@ type mockRepository struct {
 	updateFn func(ctx context.Context, user *pb.User) error
 	deleteFn func(ctx context.Context, id string) error
 	rmuFn    func(ctx context.Context, id string, mutate storage.ReadModifyUpdateFn) (*pb.User, error)
+	listFn   func(ctx context.Context, limit int, afterID string) ([]*pb.User, string, error)
 }
 
 func (m *mockRepository) Ping(ctx context.Context) error { return nil }
 func (m *mockRepository) Close() error                   { return nil }
+func (m *mockRepository) List(ctx context.Context, limit int, afterID string) ([]*pb.User, string, error) {
+	if m.listFn == nil {
+		return nil, "", nil
+	}
+	return m.listFn(ctx, limit, afterID)
+}
 func (m *mockRepository) Get(ctx context.Context, id string) (*pb.User, error) {
 	return m.getFn(ctx, id)
 }

@@ -35,6 +35,12 @@ service UserService {
     };
   }
 
+  rpc ListUsers(ListUsersRequest) returns (ListUsersResponse) {
+    option (google.api.http) = {
+      get: "/v1/users"
+    };
+  }
+
   rpc StreamUserEvents(StreamUserEventsRequest) returns (stream UserEvent) {
     option (google.api.http) = {
       get: "/v1/users/{user_id}/events"
@@ -75,6 +81,20 @@ message UpdateUserRequest {
 
 message DeleteUserRequest {
   string id = 1;
+}
+
+message ListUsersRequest {
+  // Maximum users to return. Clamped to a server maximum; 0 means the default.
+  int32 page_size = 1;
+  // Opaque continuation token from a previous ListUsersResponse. Empty starts
+  // from the beginning.
+  string page_token = 2;
+}
+
+message ListUsersResponse {
+  repeated User users = 1;
+  // Token to pass as page_token for the next page. Empty when no more results.
+  string next_page_token = 2;
 }
 
 message User {

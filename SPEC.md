@@ -2,7 +2,7 @@
 
 This file is the concise implementation contract for the repository. The
 operator-facing setup, configuration, deployment, and recovery procedures live
-in [README.md](README.md) and [docs/RUNBOOK.md](docs/RUNBOOK.md).
+in [README.md](README.md) and [docs/operations/runbook.md](docs/operations/runbook.md).
 
 ## Transport
 

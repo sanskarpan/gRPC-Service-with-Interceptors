@@ -24,6 +24,7 @@ import (
 	"github.com/example/grpc-service/pkg/pb"
 	"github.com/example/grpc-service/pkg/tracing"
 	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
@@ -395,7 +396,11 @@ func healthHandler(readiness *readinessState) http.Handler {
 
 func metricsHandler() http.Handler {
 	mux := http.NewServeMux()
-	mux.Handle("/metrics", promhttp.Handler())
+	// EnableOpenMetrics so histogram exemplars (trace_id) are exposed to
+	// scrapers that request the OpenMetrics content type.
+	mux.Handle("/metrics", promhttp.HandlerFor(prometheus.DefaultGatherer, promhttp.HandlerOpts{
+		EnableOpenMetrics: true,
+	}))
 	return mux
 }
 

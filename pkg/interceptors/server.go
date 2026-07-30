@@ -8,17 +8,44 @@ import (
 
 	"github.com/example/grpc-service/pkg/logging"
 	"github.com/example/grpc-service/pkg/metrics"
+	"github.com/rs/zerolog"
+	oteltrace "go.opentelemetry.io/otel/trace"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 )
 
+// traceIDFromContext returns the active trace ID, or "" when no valid span is
+// in the context (e.g. tracing disabled). It is the join key between logs,
+// metrics exemplars, and traces.
+func traceIDFromContext(ctx context.Context) string {
+	sc := oteltrace.SpanContextFromContext(ctx)
+	if sc.HasTraceID() {
+		return sc.TraceID().String()
+	}
+	return ""
+}
+
+// withCorrelation adds request_id and, when present, trace_id/span_id so a log
+// line can be pivoted to the exact trace and metric exemplar.
+func withCorrelation(ctx context.Context, base zerolog.Context) zerolog.Context {
+	base = base.Str("request_id", getRequestID(ctx))
+	sc := oteltrace.SpanContextFromContext(ctx)
+	if sc.HasTraceID() {
+		base = base.Str("trace_id", sc.TraceID().String())
+	}
+	if sc.HasSpanID() {
+		base = base.Str("span_id", sc.SpanID().String())
+	}
+	return base
+}
+
 // UnaryLoggingInterceptor records bounded request lifecycle fields without
 // serializing user payloads or metadata into logs.
 func UnaryLoggingInterceptor(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
 	start := time.Now()
-	logger := logging.With().Str("method", info.FullMethod).Str("request_id", getRequestID(ctx)).Logger()
+	logger := withCorrelation(ctx, logging.With().Str("method", info.FullMethod)).Logger()
 	logger.Info().Msg("gRPC request started")
 	resp, err := handler(ctx, req)
 	logger.Info().Dur("duration", time.Since(start)).Str("code", getErrorCode(err)).Msg("gRPC request completed")
@@ -31,7 +58,7 @@ func UnaryMetricsInterceptor(ctx context.Context, req interface{}, info *grpc.Un
 	start := time.Now()
 	metrics.IncTotalRequests(info.FullMethod)
 	resp, err := handler(ctx, req)
-	metrics.ObserveRequestDuration(info.FullMethod, time.Since(start).Seconds())
+	metrics.ObserveRequestDurationExemplar(info.FullMethod, time.Since(start).Seconds(), traceIDFromContext(ctx))
 	if err != nil {
 		metrics.IncTotalErrors(info.FullMethod, getErrorCode(err))
 	}
@@ -53,7 +80,7 @@ func UnaryPanicRecoveryInterceptor(ctx context.Context, req interface{}, info *g
 // StreamLoggingInterceptor records stream lifecycle without logging messages.
 func StreamLoggingInterceptor(srv interface{}, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
 	start := time.Now()
-	logger := logging.With().Str("method", info.FullMethod).Str("stream", "true").Logger()
+	logger := withCorrelation(ss.Context(), logging.With().Str("method", info.FullMethod).Str("stream", "true")).Logger()
 	logger.Info().Msg("gRPC stream started")
 	err := handler(srv, ss)
 	logger.Info().Dur("duration", time.Since(start)).Str("code", getErrorCode(err)).Msg("gRPC stream completed")
@@ -67,7 +94,7 @@ func StreamMetricsInterceptor(srv interface{}, ss grpc.ServerStream, info *grpc.
 	defer metrics.DecActiveStreams()
 	start := time.Now()
 	err := handler(srv, ss)
-	metrics.ObserveRequestDuration(info.FullMethod, time.Since(start).Seconds())
+	metrics.ObserveRequestDurationExemplar(info.FullMethod, time.Since(start).Seconds(), traceIDFromContext(ss.Context()))
 	if err != nil {
 		metrics.IncTotalErrors(info.FullMethod, getErrorCode(err))
 	}

@@ -218,7 +218,7 @@ kubectl apply --dry-run=client -f test/deployment/k8s/deployment.yaml
 
 The deployment uses a non-root user, read-only root filesystem, dropped Linux
 capabilities, startup/liveness/readiness probes, and a 30-second termination
-drain window. Follow [docs/RUNBOOK.md](docs/RUNBOOK.md) for rollout and rollback
+drain window. Follow [docs/operations/runbook.md](docs/operations/runbook.md) for rollout and rollback
 procedures.
 
 ## Contributing

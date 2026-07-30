@@ -104,3 +104,18 @@ func TestMetricsConcurrentAccess(t *testing.T) {
 	}
 	wg.Wait()
 }
+
+func TestObserveRequestDurationExemplar(t *testing.T) {
+	// Both paths (with and without a trace id) must record a sample without panicking.
+	const method = "/exemplar.Method"
+	ObserveRequestDurationExemplar(method, 0.5, "0123456789abcdef0123456789abcdef")
+	ObserveRequestDurationExemplar(method, 0.25, "")
+	// Histogram observation count must have advanced by 2.
+	m := &dto.Metric{}
+	if err := RequestDuration.WithLabelValues(method).(prometheus.Histogram).Write(m); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	if got := m.GetHistogram().GetSampleCount(); got != 2 {
+		t.Fatalf("expected 2 samples, got %d", got)
+	}
+}

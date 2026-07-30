@@ -60,6 +60,20 @@ func ObserveRequestDuration(method string, duration float64) {
 	RequestDuration.WithLabelValues(method).Observe(duration)
 }
 
+// ObserveRequestDurationExemplar records the duration and, when traceID is
+// non-empty and the histogram supports exemplars, attaches a trace_id exemplar
+// so a latency bucket in a dashboard links directly to a representative trace.
+func ObserveRequestDurationExemplar(method string, duration float64, traceID string) {
+	obs := RequestDuration.WithLabelValues(method)
+	if traceID != "" {
+		if eo, ok := obs.(prometheus.ExemplarObserver); ok {
+			eo.ObserveWithExemplar(duration, prometheus.Labels{"trace_id": traceID})
+			return
+		}
+	}
+	obs.Observe(duration)
+}
+
 // IncActiveStreams increments the number of currently active server streams.
 func IncActiveStreams() {
 	ActiveStreams.Inc()
