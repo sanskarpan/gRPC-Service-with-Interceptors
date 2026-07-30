@@ -226,6 +226,15 @@ func (cb *CircuitBreakerRepository) ReadModifyUpdate(ctx context.Context, id str
 	return u, err
 }
 
+func (cb *CircuitBreakerRepository) List(ctx context.Context, limit int, afterID string) ([]*pb.User, string, error) {
+	if err := cb.beforeCall(); err != nil {
+		return nil, "", err
+	}
+	users, next, err := cb.Repository.List(ctx, limit, afterID)
+	cb.afterCall(err)
+	return users, next, err
+}
+
 func (cb *CircuitBreakerRepository) Delete(ctx context.Context, id string) error {
 	if err := cb.beforeCall(); err != nil {
 		return err

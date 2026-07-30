@@ -2,6 +2,7 @@ package storage
 
 import (
 	"context"
+	"sort"
 	"strings"
 	"sync"
 
@@ -127,6 +128,45 @@ func (r *MemoryRepository) Delete(ctx context.Context, id string) error {
 	}
 	delete(r.users, id)
 	return nil
+}
+
+// List returns up to limit cloned users ordered by id, starting strictly after
+// afterID. nextAfterID is the id to resume from, or "" when the page exhausts
+// the remaining users.
+func (r *MemoryRepository) List(ctx context.Context, limit int, afterID string) ([]*pb.User, string, error) {
+	if err := contextError(ctx); err != nil {
+		return nil, "", err
+	}
+	if limit <= 0 {
+		return nil, "", ErrInvalid
+	}
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	if r.closed {
+		return nil, "", ErrUnavailable
+	}
+	ids := make([]string, 0, len(r.users))
+	for id := range r.users {
+		if id > afterID {
+			ids = append(ids, id)
+		}
+	}
+	sort.Strings(ids)
+	// Fetch one extra to determine whether another page exists.
+	end := limit
+	if end > len(ids) {
+		end = len(ids)
+	}
+	page := ids[:end]
+	users := make([]*pb.User, 0, len(page))
+	for _, id := range page {
+		users = append(users, proto.Clone(r.users[id]).(*pb.User))
+	}
+	next := ""
+	if len(ids) > limit {
+		next = page[len(page)-1]
+	}
+	return users, next, nil
 }
 
 // Close releases no external resources for the in-memory implementation.

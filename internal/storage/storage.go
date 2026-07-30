@@ -22,6 +22,10 @@ type Repository interface {
 	Update(context.Context, *pb.User) error
 	ReadModifyUpdate(context.Context, string, ReadModifyUpdateFn) (*pb.User, error)
 	Delete(context.Context, string) error
+	// List returns up to limit users ordered by id, starting strictly after
+	// afterID (keyset pagination; empty afterID starts from the beginning), and
+	// the id to use as the next afterID ("" when the page is the last one).
+	List(ctx context.Context, limit int, afterID string) (users []*pb.User, nextAfterID string, err error)
 	Ping(context.Context) error
 	Close() error
 }

@@ -521,6 +521,55 @@ func (r *PostgresRepository) Get(ctx context.Context, id string) (user *pb.User,
 	return
 }
 
+// List returns up to limit users ordered by id, starting strictly after
+// afterID (keyset pagination). It reads one extra row to decide whether a
+// further page exists and, if so, returns the last returned id as nextAfterID.
+func (r *PostgresRepository) List(ctx context.Context, limit int, afterID string) (users []*pb.User, nextAfterID string, err error) {
+	if limit <= 0 {
+		return nil, "", ErrInvalid
+	}
+	err = retryOperation(ctx, r.retryCfg(), func(ctx context.Context) error {
+		rows, qerr := r.db.QueryContext(ctx,
+			`SELECT id, name, email, age, created_at, updated_at
+			   FROM users
+			  WHERE id > $1
+			  ORDER BY id ASC
+			  LIMIT $2`, afterID, limit+1)
+		if qerr != nil {
+			return fmt.Errorf("list users: %w", qerr)
+		}
+		defer func() { _ = rows.Close() }()
+
+		collected := make([]*pb.User, 0, limit)
+		for rows.Next() {
+			u := &pb.User{}
+			var createdAt, updatedAt time.Time
+			if serr := rows.Scan(&u.Id, &u.Name, &u.Email, &u.Age, &createdAt, &updatedAt); serr != nil {
+				return fmt.Errorf("scan user: %w", serr)
+			}
+			u.CreatedAt = timestamppb.New(createdAt)
+			u.UpdatedAt = timestamppb.New(updatedAt)
+			collected = append(collected, u)
+		}
+		if rerr := rows.Err(); rerr != nil {
+			return fmt.Errorf("iterate users: %w", rerr)
+		}
+		// The (limit+1)-th row only signals a further page; it is not returned.
+		next := ""
+		if len(collected) > limit {
+			collected = collected[:limit]
+			next = collected[len(collected)-1].GetId()
+		}
+		users = collected
+		nextAfterID = next
+		return nil
+	})
+	if err != nil {
+		return nil, "", err
+	}
+	return users, nextAfterID, nil
+}
+
 // Update replaces a user row atomically with a SELECT FOR UPDATE guard.
 func (r *PostgresRepository) Update(ctx context.Context, user *pb.User) error {
 	if user == nil || user.GetId() == "" || user.GetName() == "" || user.GetEmail() == "" {
