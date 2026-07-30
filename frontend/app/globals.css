@@ -2,111 +2,190 @@
 @tailwind components;
 @tailwind utilities;
 
+/*
+  SIGNAL — a precision console for the gRPC UserService.
+  Ink-graphite surfaces, a single restrained signal-lime accent, distinctive
+  monospace/sans typography, and instrument-grade depth (glow + grain + hairlines).
+*/
 :root {
-  --bg-primary: #0d1117;
-  --bg-secondary: #161b22;
-  --border-color: #30363d;
-  --text-primary: #f1f5f9;
-  --text-secondary: #94a3b8;
-  --text-muted: #64748b;
-  --accent-blue: #3b82f6;
-  --accent-green: #22c55e;
-  --accent-red: #ef4444;
-  --accent-amber: #f59e0b;
+  --ink-900: #0a0b0e; /* app backdrop, deepest */
+  --ink-850: #0e1014; /* rails / tab strip */
+  --ink-800: #121419; /* panels / header */
+  --ink-760: #171a20; /* raised surfaces / inputs */
+  --ink-700: #1d212a; /* hover */
+  --line: #242832; /* hairline */
+  --line-2: #2f3542; /* stronger edge */
+
+  --txt: #e8eaf0; /* primary */
+  --txt-2: #98a0ac; /* secondary */
+  --txt-3: #616772; /* muted */
+
+  --signal: #c7f04a; /* the one accent — signal lime */
+  --signal-soft: rgba(199, 240, 74, 0.12);
+  --signal-line: rgba(199, 240, 74, 0.32);
+
+  --cyan: #63d3e8; /* server-stream / info */
+  --amber: #f0c65a; /* client-stream / warn */
+  --rose: #f2748d; /* bidi-stream / error */
+  --emerald: #79e2a8; /* unary / ok */
+
+  --radius: 10px;
 }
 
 * {
   box-sizing: border-box;
 }
 
-html, body {
+html,
+body {
   height: 100%;
   margin: 0;
   padding: 0;
-  background: var(--bg-primary);
-  color: var(--text-primary);
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  color: var(--txt);
+  background: var(--ink-900);
+  font-family: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
+  font-feature-settings: 'cv05' 1, 'ss01' 1;
+  -webkit-font-smoothing: antialiased;
 }
 
-/* Custom scrollbar */
+.font-mono,
+code,
+pre {
+  font-family: var(--font-mono), ui-monospace, 'JetBrains Mono', monospace;
+}
+
+/* Atmospheric backdrop: a faint signal glow + a fine graph grid + grain. */
+.app-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(60rem 40rem at 12% -8%, rgba(199, 240, 74, 0.06), transparent 60%),
+    radial-gradient(50rem 40rem at 100% 0%, rgba(99, 211, 232, 0.05), transparent 55%);
+}
+.app-grid {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  opacity: 0.5;
+  background-image:
+    linear-gradient(to right, rgba(255, 255, 255, 0.018) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.018) 1px, transparent 1px);
+  background-size: 44px 44px;
+  mask-image: radial-gradient(120% 100% at 50% 0%, black, transparent 78%);
+}
+.app-grain {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  opacity: 0.035;
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+/* Scrollbars — thin, ink, self-effacing until hovered. */
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 9px;
+  height: 9px;
 }
-
 ::-webkit-scrollbar-track {
-  background: var(--bg-primary);
+  background: transparent;
 }
-
 ::-webkit-scrollbar-thumb {
-  background: var(--border-color);
-  border-radius: 4px;
+  background: var(--line-2);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
 }
-
 ::-webkit-scrollbar-thumb:hover {
-  background: #4b5563;
+  background: #3a4152;
+  background-clip: padding-box;
 }
 
-/* Monaco editor overrides */
-.monaco-editor {
-  padding-top: 0 !important;
-}
-
-.monaco-editor .margin {
-  background: #0d1117 !important;
-}
-
+/* Monaco surfaces track the ink palette rather than VS defaults. */
+.monaco-editor,
+.monaco-editor .margin,
+.monaco-editor-background,
 .monaco-editor .monaco-editor-background {
-  background: #0d1117 !important;
+  background: transparent !important;
+}
+.monaco-editor .line-numbers {
+  color: #454b57 !important;
 }
 
-/* Selection */
 ::selection {
-  background: rgba(59, 130, 246, 0.3);
+  background: rgba(199, 240, 74, 0.26);
+  color: #fff;
 }
 
-/* Focus ring */
 *:focus-visible {
-  outline: 2px solid var(--accent-blue);
-  outline-offset: 2px;
+  outline: none;
+  box-shadow: 0 0 0 1px var(--ink-900), 0 0 0 2px var(--signal-line);
+  border-radius: 8px;
 }
 
-/* Input and select styling */
-input, select, textarea {
+input,
+select,
+textarea {
   font-family: inherit;
 }
 
 select {
   appearance: none;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='%2398a0ac' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
   background-repeat: no-repeat;
-  background-position: right 0.75rem center;
-  background-size: 1rem;
+  background-position: right 0.7rem center;
+  background-size: 0.95rem;
 }
 
-/* Animations */
-@keyframes pulse-glow {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.5; }
+/* A live "signal" pulse for connection / streaming indicators. */
+@keyframes signal-ping {
+  0% {
+    transform: scale(1);
+    opacity: 0.55;
+  }
+  75%,
+  100% {
+    transform: scale(2.6);
+    opacity: 0;
+  }
+}
+.signal-dot {
+  position: relative;
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: var(--signal);
+  box-shadow: 0 0 10px rgba(199, 240, 74, 0.6);
+}
+.signal-dot::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 999px;
+  background: var(--signal);
+  animation: signal-ping 1.8s cubic-bezier(0, 0, 0.2, 1) infinite;
 }
 
-.animate-pulse-glow {
-  animation: pulse-glow 2s ease-in-out infinite;
+/* An animated equalizer for the streaming state. */
+@keyframes eq {
+  0%,
+  100% {
+    transform: scaleY(0.35);
+  }
+  50% {
+    transform: scaleY(1);
+  }
 }
-
-/* Loading shimmer */
-@keyframes shimmer {
-  0% { background-position: -200% 0; }
-  100% { background-position: 200% 0; }
-}
-
-.shimmer {
-  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.1), transparent);
-  background-size: 200% 100%;
-  animation: shimmer 1.5s infinite;
-}
-
-/* Toast customization */
-.react-hot-toast {
-  font-family: inherit !important;
+.eq-bar {
+  width: 2px;
+  height: 12px;
+  border-radius: 2px;
+  background: var(--cyan);
+  transform-origin: bottom;
+  animation: eq 0.9s ease-in-out infinite;
 }
