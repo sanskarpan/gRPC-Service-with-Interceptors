@@ -39,12 +39,26 @@ func Init(ctx context.Context, cfg config.TracingConfig) (func(context.Context) 
 	}
 	provider := trace.NewTracerProvider(
 		trace.WithBatcher(exporter),
+		trace.WithSampler(samplerFor(cfg.SampleRatio)),
 		trace.WithResource(resource.NewSchemaless(
 			semconv.ServiceName(cfg.ServiceName),
 		)),
 	)
 	otel.SetTracerProvider(provider)
 	return provider.Shutdown, nil
+}
+
+// samplerFor builds a parent-based sampler from a head sampling ratio. A ratio
+// <= 0 means always-sample (backward compatible); >= 1 also always samples;
+// values in between sample that fraction of root spans while always honoring an
+// upstream parent's sampling decision.
+func samplerFor(ratio float64) trace.Sampler {
+	switch {
+	case ratio <= 0 || ratio >= 1:
+		return trace.ParentBased(trace.AlwaysSample())
+	default:
+		return trace.ParentBased(trace.TraceIDRatioBased(ratio))
+	}
 }
 
 // NewServerHandler returns the OpenTelemetry gRPC stats handler for server
