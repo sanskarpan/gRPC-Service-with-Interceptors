@@ -177,8 +177,9 @@ func decodePageToken(token string) (string, error) {
 	return string(raw), nil
 }
 
-// CreateUser validates and stores a user until the bounded in-memory capacity
-// is reached. It is not idempotent because the protobuf contract has no key.
+// CreateUser validates and stores a user until the bounded capacity is reached.
+// When the request carries an idempotency_key, retrying with the same key
+// returns the originally created user instead of creating a duplicate.
 func (s *UserService) CreateUser(ctx context.Context, req *pb.CreateUserRequest) (*pb.User, error) {
 	if err := validateContext(ctx); err != nil {
 		return nil, err
@@ -188,6 +189,9 @@ func (s *UserService) CreateUser(ctx context.Context, req *pb.CreateUserRequest)
 	}
 	name, email, err := validateUserFields(req.Name, req.Email, int(req.Age), s.maxStringBytes)
 	if err != nil {
+		return nil, err
+	}
+	if err := validateOptionalText(req.GetIdempotencyKey(), s.maxStringBytes, "idempotency_key"); err != nil {
 		return nil, err
 	}
 
@@ -208,10 +212,11 @@ func (s *UserService) CreateUser(ctx context.Context, req *pb.CreateUserRequest)
 	if s.repository == nil {
 		return nil, mapStorageError(storage.ErrUnavailable)
 	}
-	if err := s.repository.Create(ctx, user, s.maxUsers); err != nil {
+	stored, _, err := s.repository.CreateWithIdempotency(ctx, user, s.maxUsers, req.GetIdempotencyKey())
+	if err != nil {
 		return nil, mapStorageError(err)
 	}
-	return proto.Clone(user).(*pb.User), nil
+	return proto.Clone(stored).(*pb.User), nil
 }
 
 // UpdateUser applies the non-zero fields in the request and returns a copy.
