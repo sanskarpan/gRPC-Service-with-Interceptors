@@ -28,6 +28,10 @@ TLS paths when TLS is enabled.
 | `AUTH_API_KEYS` | csv | — | one of | Accepted API keys (≥16 chars each) |
 | `JWT_SECRET` | string | — | one of | HS256 secret (≥32 bytes when set) |
 | `JWT_PUBLIC_KEY` | PEM | — | one of | RSA/EC (P-256) public key for RS256/ES256 JWTs |
+| `AUTH_DEFAULT_DENY` | bool | `false` | no | Deny methods with no scope policy |
+| `AUTH_API_KEY_SCOPES` | csv | — | no | Scopes granted to API-key callers |
+| `AUTH_AUDIT_ALLOWS` | bool | `false` | no | Audit successful auth, not just denials |
+| `SERVER_MAX_IN_FLIGHT_REQUESTS` | int | `0` | no | Concurrent unary cap (load shedding; 0=off) |
 | `AUTH_JWT_AUDIENCE` / `AUTH_JWT_ISSUER` | string | — | no | Optional JWT `aud`/`iss` binding |
 | `STORAGE_BACKEND` | enum | `memory` | no | `memory` or `postgres` |
 | `DATABASE_URL` | dsn | — | if postgres | PostgreSQL connection string |

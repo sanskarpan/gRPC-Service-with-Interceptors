@@ -38,3 +38,14 @@ baked into the image or manifests. See the [Security model](security.md).
 ```sh
 make manifests   # or: kubectl apply --dry-run=server -f test/deployment/k8s/
 ```
+
+## External secret management
+
+Secrets reach the service only via environment variables sourced from Kubernetes
+Secrets (`secretKeyRef`) — the application never talks to a secret backend
+directly. To source those Secrets from Vault, AWS Secrets Manager, or GCP Secret
+Manager, use the [External Secrets Operator](https://external-secrets.io) (or the
+Secrets Store CSI driver). A ready-to-adapt `ExternalSecret` manifest is provided
+at `test/deployment/k8s/externalsecret.yaml`; the container image and Deployment
+are unchanged. This keeps the binary backend-agnostic and avoids coupling it to a
+single secret-manager SDK.

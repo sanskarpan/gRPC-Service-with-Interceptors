@@ -122,3 +122,25 @@ test prove the behavior.
 - [x] README, ADRs, runbook, CI/CD, Dependabot, CodeQL, Docker hardening, and
       deployment documentation.
 
+
+## Deferred (decided against for this service shape)
+
+These were evaluated and deliberately deferred; each has a clean seam for when a
+real requirement appears.
+
+- **Multi-tenancy / per-tenant quotas** — per-client rate limiting already keys
+  on the authenticated principal (JWT `sub` / API-key hash), which provides
+  per-caller quotas. True multi-tenancy (tenant_id column, row-level isolation,
+  tenant context on every query) reshapes the data model and is a product
+  decision, not reference hardening. Seam: a `tenant` scope/claim can key the
+  limiter and future queries once required.
+- **Feature flags** — over-engineering for a fixed-API CRUD reference; existing
+  config booleans (`cache.enabled`, `circuit_breaker.enabled`) are static
+  toggles. Seam: adopt OpenFeature (CNCF) behind a small interface if dynamic,
+  per-segment flags are ever needed.
+- **General config hot-reload** — beyond the live log-level (SIGHUP), tunables
+  are wired at construction; live-swapping them needs atomic indirection for
+  marginal benefit. In Kubernetes the idiomatic path is a rolling restart on
+  ConfigMap change.
+- **Read replicas / multi-region** — see the read/write-split seam in
+  docs/architecture/storage.md; deferred until a read-throughput need exists.
