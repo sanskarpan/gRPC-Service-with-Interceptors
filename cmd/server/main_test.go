@@ -20,6 +20,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -942,17 +943,41 @@ func waitForStatus(t *testing.T, url string, expected int) {
 	t.Fatalf("did not observe HTTP %d at %s", expected, url)
 }
 
+// allocatedPorts guards against the intra-process freePort race: two parallel
+// tests can each ask the kernel for an ephemeral port (:0), close it, and be
+// handed the *same* number before either server binds it. We record every port
+// handed out for the life of the test binary and retry until we get one no
+// other test in this binary has taken, so a just-released port the kernel
+// re-offers is rejected rather than double-assigned. (The residual close-then-
+// rebind window versus unrelated processes is inherent to the :0 pattern.)
+var (
+	allocatedPortsMu sync.Mutex
+	allocatedPorts   = map[int]bool{}
+)
+
 func freePort(t *testing.T) int {
 	t.Helper()
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatalf("reserve port: %v", err)
+	for attempt := 0; attempt < 100; attempt++ {
+		listener, err := net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			t.Fatalf("reserve port: %v", err)
+		}
+		port := listener.Addr().(*net.TCPAddr).Port
+		if err := listener.Close(); err != nil {
+			t.Fatalf("release port: %v", err)
+		}
+		allocatedPortsMu.Lock()
+		taken := allocatedPorts[port]
+		if !taken {
+			allocatedPorts[port] = true
+		}
+		allocatedPortsMu.Unlock()
+		if !taken {
+			return port
+		}
 	}
-	port := listener.Addr().(*net.TCPAddr).Port
-	if err := listener.Close(); err != nil {
-		t.Fatalf("release port: %v", err)
-	}
-	return port
+	t.Fatal("could not find an unallocated free port after 100 attempts")
+	return 0
 }
 
 func itoa(value int) string {
