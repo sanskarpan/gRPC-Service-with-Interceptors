@@ -39,19 +39,35 @@ func extractClientID(ctx context.Context) string {
 	return ""
 }
 
+type claimsKey struct{}
+
+func withClaims(ctx context.Context, c *Claims) context.Context {
+	return context.WithValue(ctx, claimsKey{}, c)
+}
+
+// ClaimsFromContext returns the authenticated principal's claims, or nil for
+// unauthenticated methods (e.g. health checks) that never ran auth.
+func ClaimsFromContext(ctx context.Context) *Claims {
+	if v, ok := ctx.Value(claimsKey{}).(*Claims); ok {
+		return v
+	}
+	return nil
+}
+
 // Authenticator verifies API keys and compact JWTs (HS256 with a shared secret,
 // or RS256/ES256 against a configured PEM public key) at the gRPC boundary.
 // The verification path is selected by the token's alg AND the configured key
 // type, so a token cannot use HS256 to trick an asymmetric public key into being
 // treated as an HMAC secret (the classic algorithm-confusion attack).
 type Authenticator struct {
-	jwtSecret   []byte
-	apiKeys     [][]byte
-	jwtAudience string
-	jwtIssuer   string
-	jwtRSAKey   *rsa.PublicKey
-	jwtECKey    *ecdsa.PublicKey
-	auditAllows bool
+	jwtSecret    []byte
+	apiKeys      [][]byte
+	jwtAudience  string
+	jwtIssuer    string
+	jwtRSAKey    *rsa.PublicKey
+	jwtECKey     *ecdsa.PublicKey
+	auditAllows  bool
+	apiKeyScopes []string
 }
 
 // minRSABits is the smallest RSA modulus accepted as a JWT trust anchor. A key
@@ -64,10 +80,11 @@ func NewAuthenticator(cfg config.AuthConfig) (*Authenticator, error) {
 		return nil, fmt.Errorf("no authentication credentials configured")
 	}
 	auth := &Authenticator{
-		jwtSecret:   []byte(cfg.JWTSecret),
-		jwtAudience: cfg.JWTAudience,
-		jwtIssuer:   cfg.JWTIssuer,
-		auditAllows: cfg.AuditAllows,
+		jwtSecret:    []byte(cfg.JWTSecret),
+		jwtAudience:  cfg.JWTAudience,
+		jwtIssuer:    cfg.JWTIssuer,
+		auditAllows:  cfg.AuditAllows,
+		apiKeyScopes: append([]string(nil), cfg.APIKeyScopes...),
 	}
 	for _, key := range cfg.APIKeys {
 		if strings.TrimSpace(key) != "" {
@@ -130,43 +147,6 @@ func (a *Authenticator) authenticateCredential(ctx context.Context) bool {
 	return a.validJWT(credential)
 }
 
-func (a *Authenticator) clientID(ctx context.Context) string {
-	credential, ok := credentialFromContext(ctx)
-	if !ok {
-		return ""
-	}
-	for _, key := range a.apiKeys {
-		if hmac.Equal(key, []byte(credential)) {
-			return fmt.Sprintf("apikey:%x", sha256.Sum256([]byte(credential)))
-		}
-	}
-	return a.jwtSubject(credential)
-}
-
-func (a *Authenticator) jwtSubject(token string) string {
-	parts := strings.Split(token, ".")
-	if len(parts) != 3 {
-		return ""
-	}
-	payloadBytes, err := base64.RawURLEncoding.DecodeString(parts[1])
-	if err != nil {
-		return ""
-	}
-	var claims map[string]json.RawMessage
-	if err := json.Unmarshal(payloadBytes, &claims); err != nil {
-		return ""
-	}
-	raw, ok := claims["sub"]
-	if !ok {
-		return ""
-	}
-	var sub string
-	if err := json.Unmarshal(raw, &sub); err != nil || sub == "" {
-		return ""
-	}
-	return sub
-}
-
 // verifySignature validates the JWT signature for the given alg using ONLY the
 // key material configured for that algorithm class. An unconfigured alg fails
 // closed, which blocks algorithm-confusion attacks (e.g. an HS256 token signed
@@ -198,64 +178,129 @@ func (a *Authenticator) verifySignature(alg, signingInput string, sig []byte) bo
 	}
 }
 
+// Claims are the verified, trusted claims of an authenticated principal — a JWT
+// or an API key. Scopes drive per-method authorization.
+type Claims struct {
+	Subject string
+	Scopes  []string
+}
+
+// validJWT reports whether a token is a fully valid JWT. It is a thin wrapper
+// over the single verification path in parseClaims.
 func (a *Authenticator) validJWT(token string) bool {
+	_, ok := a.parseClaims(token)
+	return ok
+}
+
+// parseClaims fully verifies a JWT (signature, then exp/nbf/iat, then iss/aud)
+// and returns its trusted subject and scopes ONLY on success. It is the single
+// JWT verification path; trusted claims must never be read from an unverified
+// token.
+func (a *Authenticator) parseClaims(token string) (*Claims, bool) {
 	parts := strings.Split(token, ".")
 	if len(parts) != 3 {
-		return false
+		return nil, false
 	}
 	headerBytes, err := base64.RawURLEncoding.DecodeString(parts[0])
 	if err != nil {
-		return false
+		return nil, false
 	}
 	var header map[string]string
 	if err := json.Unmarshal(headerBytes, &header); err != nil || (header["typ"] != "" && header["typ"] != "JWT") {
-		return false
+		return nil, false
 	}
 	signingInput := parts[0] + "." + parts[1]
 	sig, err := base64.RawURLEncoding.DecodeString(parts[2])
 	if err != nil {
-		return false
+		return nil, false
 	}
 	if !a.verifySignature(header["alg"], signingInput, sig) {
-		return false
+		return nil, false
 	}
 	payloadBytes, err := base64.RawURLEncoding.DecodeString(parts[1])
 	if err != nil {
-		return false
+		return nil, false
 	}
 	var claims map[string]json.RawMessage
 	if err := json.Unmarshal(payloadBytes, &claims); err != nil {
-		return false
+		return nil, false
 	}
 	exp, ok := unixClaim(claims["exp"])
 	if !ok || !time.Now().Before(time.Unix(exp, 0)) {
-		return false
+		return nil, false
 	}
 	if raw, ok := claims["nbf"]; ok {
 		nbf, valid := unixClaim(raw)
 		if !valid || time.Now().Before(time.Unix(nbf, 0)) {
-			return false
+			return nil, false
 		}
 	}
 	if raw, ok := claims["iat"]; ok {
 		iat, valid := unixClaim(raw)
 		if !valid {
-			return false
+			return nil, false
 		}
 		if time.Now().Before(time.Unix(iat, 0).Add(-jwtClockSkew)) {
-			return false
+			return nil, false
 		}
 	}
 	if a.jwtIssuer != "" {
 		iss, _ := stringClaim(claims["iss"])
 		if iss != a.jwtIssuer {
-			return false
+			return nil, false
 		}
 	}
 	if a.jwtAudience != "" && !audienceMatches(claims["aud"], a.jwtAudience) {
-		return false
+		return nil, false
 	}
-	return true
+	sub, _ := stringClaim(claims["sub"])
+	return &Claims{Subject: sub, Scopes: extractScopes(claims)}, true
+}
+
+// authenticate verifies the credential in ctx and returns the trusted principal
+// claims. API-key principals get an apikey:<hash> subject and the configured
+// api-key scopes (empty by default — they can then only call unscoped methods).
+func (a *Authenticator) authenticate(ctx context.Context) (*Claims, bool) {
+	credential, ok := credentialFromContext(ctx)
+	if !ok {
+		return nil, false
+	}
+	for _, key := range a.apiKeys {
+		if hmac.Equal(key, []byte(credential)) {
+			return &Claims{
+				Subject: fmt.Sprintf("apikey:%x", sha256.Sum256([]byte(credential))),
+				Scopes:  append([]string(nil), a.apiKeyScopes...),
+			}, true
+		}
+	}
+	return a.parseClaims(credential)
+}
+
+// extractScopes reads scopes from the standard OAuth claims — `scope` (a
+// space-delimited string per RFC 6749/8693), or `scp`/`scopes` (a space-
+// delimited string OR a JSON array). Scopes are case-sensitive; an absent claim
+// yields an empty set.
+func extractScopes(claims map[string]json.RawMessage) []string {
+	var out []string
+	for _, key := range []string{"scope", "scp", "scopes"} {
+		raw, ok := claims[key]
+		if !ok {
+			continue
+		}
+		if s, ok := stringClaim(raw); ok {
+			out = append(out, strings.Fields(s)...)
+			continue
+		}
+		var arr []string
+		if err := json.Unmarshal(raw, &arr); err == nil {
+			for _, v := range arr {
+				if v = strings.TrimSpace(v); v != "" {
+					out = append(out, v)
+				}
+			}
+		}
+	}
+	return out
 }
 
 // stringClaim decodes a JSON string claim.
@@ -327,18 +372,28 @@ func UnaryAuthInterceptor(ctx context.Context, req interface{}, info *grpc.Unary
 func UnaryAuthInterceptorWithAuthenticator(auth *Authenticator) grpc.UnaryServerInterceptor {
 	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
 		if requiresAuth(info.FullMethod) {
-			if auth == nil || !auth.authenticateCredential(ctx) {
-				auditAuthDecision(ctx, info.FullMethod, "deny", "")
+			claims, ok := authenticatePrincipal(auth, ctx)
+			if !ok {
+				auditAuthDecision(ctx, "authn", info.FullMethod, "deny", "")
 				return nil, authenticationError()
 			}
-			clientID := auth.clientID(ctx)
-			ctx = withClientID(ctx, clientID)
+			ctx = withClientID(ctx, claims.Subject)
+			ctx = withClaims(ctx, claims)
 			if auth.auditAllows {
-				auditAuthDecision(ctx, info.FullMethod, "allow", clientID)
+				auditAuthDecision(ctx, "authn", info.FullMethod, "allow", claims.Subject)
 			}
 		}
 		return handler(ctx, req)
 	}
+}
+
+// authenticatePrincipal returns the verified claims, or false if auth is not
+// configured or the credential is invalid.
+func authenticatePrincipal(auth *Authenticator, ctx context.Context) (*Claims, bool) {
+	if auth == nil {
+		return nil, false
+	}
+	return auth.authenticate(ctx)
 }
 
 // StreamAuthInterceptor is a fail-closed compatibility interceptor.
@@ -351,14 +406,15 @@ func StreamAuthInterceptor(srv interface{}, ss grpc.ServerStream, info *grpc.Str
 func StreamAuthInterceptorWithAuthenticator(auth *Authenticator) grpc.StreamServerInterceptor {
 	return func(srv interface{}, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
 		if requiresAuth(info.FullMethod) {
-			if auth == nil || !auth.authenticateCredential(ss.Context()) {
-				auditAuthDecision(ss.Context(), info.FullMethod, "deny", "")
+			claims, ok := authenticatePrincipal(auth, ss.Context())
+			if !ok {
+				auditAuthDecision(ss.Context(), "authn", info.FullMethod, "deny", "")
 				return authenticationError()
 			}
-			clientID := auth.clientID(ss.Context())
-			ctx := withClientID(ss.Context(), clientID)
+			ctx := withClientID(ss.Context(), claims.Subject)
+			ctx = withClaims(ctx, claims)
 			if auth.auditAllows {
-				auditAuthDecision(ctx, info.FullMethod, "allow", clientID)
+				auditAuthDecision(ctx, "authn", info.FullMethod, "allow", claims.Subject)
 			}
 			return handler(srv, &wrappedServerStream{ServerStream: ss, ctx: ctx})
 		}
