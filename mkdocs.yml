@@ -92,6 +92,7 @@ nav:
       - Deployment: operations/deployment.md
       - Runbook: operations/runbook.md
       - Observability: operations/observability.md
+      - Service level objectives: operations/slo.md
       - Security model: operations/security.md
   - Contributing:
       - Contributing guide: contributing/contributing.md

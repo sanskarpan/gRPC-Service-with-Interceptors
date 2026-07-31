@@ -123,3 +123,57 @@ groups:
         annotations:
           summary: "Database connection wait rate is high"
           description: "Instance {{ $labels.instance }} has {{ $value }} waits/sec over 5m"
+
+  # ── SLO: 99.9% availability, multi-window multi-burn-rate ────────────────
+  # Error budget = 0.1% of requests. Burn-rate alerting (Google SRE workbook):
+  # page on a fast burn (14.4x over 1h AND 5m), ticket on a slow burn
+  # (6x over 6h AND 30m). Both windows must agree, which suppresses flapping.
+  - name: grpc-service-slo
+    interval: 30s
+    rules:
+      - record: grpc:slo_error_ratio:5m
+        expr: |
+          sum(rate(grpc_server_total_errors[5m]))
+          /
+          clamp_min(sum(rate(grpc_server_total_requests[5m])), 0.001)
+      - record: grpc:slo_error_ratio:30m
+        expr: |
+          sum(rate(grpc_server_total_errors[30m]))
+          /
+          clamp_min(sum(rate(grpc_server_total_requests[30m])), 0.001)
+      - record: grpc:slo_error_ratio:1h
+        expr: |
+          sum(rate(grpc_server_total_errors[1h]))
+          /
+          clamp_min(sum(rate(grpc_server_total_requests[1h])), 0.001)
+      - record: grpc:slo_error_ratio:6h
+        expr: |
+          sum(rate(grpc_server_total_errors[6h]))
+          /
+          clamp_min(sum(rate(grpc_server_total_requests[6h])), 0.001)
+
+      - alert: SLOErrorBudgetFastBurn
+        expr: |
+          grpc:slo_error_ratio:5m > (14.4 * 0.001)
+          and
+          grpc:slo_error_ratio:1h > (14.4 * 0.001)
+        for: 2m
+        labels:
+          severity: critical
+          slo: availability
+        annotations:
+          summary: "Fast error-budget burn (99.9% availability SLO)"
+          description: "Error rate is burning the 30-day budget >14x over 1h and 5m windows"
+
+      - alert: SLOErrorBudgetSlowBurn
+        expr: |
+          grpc:slo_error_ratio:30m > (6 * 0.001)
+          and
+          grpc:slo_error_ratio:6h > (6 * 0.001)
+        for: 15m
+        labels:
+          severity: warning
+          slo: availability
+        annotations:
+          summary: "Slow error-budget burn (99.9% availability SLO)"
+          description: "Error rate is burning the 30-day budget >6x over 6h and 30m windows"

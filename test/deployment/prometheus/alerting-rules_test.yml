@@ -47,3 +47,21 @@ tests:
             exp_annotations:
               summary: "Database connection pool near exhaustion"
               description: "Instance a has 0 available connections remaining"
+
+  # A 2% error rate (>14.4x the 0.1% budget) must trip the fast-burn SLO alert.
+  - interval: 1m
+    input_series:
+      - series: 'grpc_server_total_requests{method="/example.v1.UserService/GetUser"}'
+        values: '0+100x75'
+      - series: 'grpc_server_total_errors{method="/example.v1.UserService/GetUser",code="Internal"}'
+        values: '0+2x75'
+    alert_rule_test:
+      - eval_time: 70m
+        alertname: SLOErrorBudgetFastBurn
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              slo: availability
+            exp_annotations:
+              summary: "Fast error-budget burn (99.9% availability SLO)"
+              description: "Error rate is burning the 30-day budget >14x over 1h and 5m windows"
