@@ -8,21 +8,10 @@ reproducible development/deployment tooling.
 
 ## Walkthrough
 
-A full server-side walkthrough — starting the authenticated server, health and
-readiness probes, the example client driving unary + streaming RPCs, and
-Prometheus metrics:
-
-[![Server walkthrough](docs/assets/walkthrough.gif)](docs/assets/walkthrough.mp4)
-
-**[Watch the full-quality MP4](docs/assets/walkthrough.mp4)** (terminal, ~44s).
-Reproduce it with `./scripts/demo/run.sh` (or
-`go build -o bin/server ./cmd/server && go build -o bin/client ./cmd/client`).
-
-### Signal — the request-builder console
-
-A precision console for the UserService: browse methods, compose requests, and
-inspect unary and streaming responses. This end-to-end capture drives a unary
-`GetUser`, a `CreateUser` mutation, and a server-streaming `StreamUserEvents`:
+**Signal** — the request-builder console for the UserService: browse methods,
+compose requests, and inspect unary and streaming responses. This end-to-end
+capture drives a unary `GetUser`, a `CreateUser` mutation, and a server-streaming
+`StreamUserEvents`:
 
 [![Signal console walkthrough](docs/assets/ui-walkthrough.gif)](docs/assets/ui-walkthrough.mp4)
 
@@ -36,8 +25,20 @@ inspect unary and streaming responses. This end-to-end capture drives a unary
 
 The browser console is an intentional demo-mode request builder: it simulates
 responses locally so the UI runs without a browser-gRPC gateway. The
-server-to-client gRPC traffic is exercised in the terminal walkthrough above and
-by the full E2E test suite. See [Frontend](#frontend).
+server-to-client gRPC traffic is exercised by the server walkthrough below and by
+the full E2E test suite. See [Frontend](#frontend).
+
+### Server walkthrough
+
+A full server-side run — starting the authenticated server, health and readiness
+probes, the example client driving unary + streaming RPCs, and Prometheus
+metrics:
+
+[![Server walkthrough](docs/assets/walkthrough.gif)](docs/assets/walkthrough.mp4)
+
+**[Watch the full-quality MP4](docs/assets/walkthrough.mp4)** (terminal, ~44s).
+Reproduce it with `./scripts/demo/run.sh` (or
+`go build -o bin/server ./cmd/server && go build -o bin/client ./cmd/client`).
 
 ## System map
 
