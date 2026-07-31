@@ -1,6 +1,53 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
+
+/*
+  Tailwind v4 CSS-first theme. These tokens generate the same utilities the
+  components use (bg-ink-800, text-signal, shadow-panel, animate-fade-up, …) that
+  previously lived in tailwind.config.ts. Fonts reference next/font's --font-plex
+  / --font-jb variables so the theme tokens are not self-referential.
+*/
+@theme {
+  --font-sans: var(--font-plex), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-jb), ui-monospace, "JetBrains Mono", monospace;
+
+  --color-ink-900: #0a0b0e;
+  --color-ink-850: #0e1014;
+  --color-ink-800: #121419;
+  --color-ink-760: #171a20;
+  --color-ink-700: #1d212a;
+
+  --color-line: #242832;
+  --color-line-2: #2f3542;
+
+  --color-txt: #e8eaf0;
+  --color-txt-2: #98a0ac;
+  --color-txt-3: #616772;
+
+  --color-signal: #c7f04a;
+  --color-signal-soft: rgba(199, 240, 74, 0.12);
+  --color-signal-line: rgba(199, 240, 74, 0.32);
+
+  --color-cyan-signal: #63d3e8;
+  --color-amber-signal: #f0c65a;
+  --color-rose-signal: #f2748d;
+  --color-emerald-signal: #79e2a8;
+
+  --shadow-panel: 0 24px 60px -20px rgba(0, 0, 0, 0.6);
+  --shadow-signal: 0 0 0 1px rgba(199, 240, 74, 0.35), 0 8px 30px -8px rgba(199, 240, 74, 0.35);
+
+  --animate-fade-up: fade-up 0.4s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+
+  @keyframes fade-up {
+    0% {
+      opacity: 0;
+      transform: translateY(6px);
+    }
+    100% {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+}
 
 /*
   SIGNAL — a precision console for the gRPC UserService.
