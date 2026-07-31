@@ -45,6 +45,10 @@ type ServerConfig struct {
 	RateLimitBurst              int           `yaml:"rate_limit_burst"`
 	PerClientRateLimitPerSecond int           `yaml:"per_client_rate_limit_per_second"`
 	PerClientRateLimitBurst     int           `yaml:"per_client_rate_limit_burst"`
+	// MaxInFlightRequests bounds concurrent unary requests (load shedding). 0
+	// disables it. Size it relative to storage.max_open_conns, since the goal is
+	// to protect the database from a thundering herd.
+	MaxInFlightRequests int `yaml:"max_in_flight_requests"`
 }
 
 // TLSConfig describes server-side TLS and optional mutual TLS validation.
@@ -83,6 +87,18 @@ type AuthConfig struct {
 	// one record per authenticated request; enable it when a full
 	// who-accessed-what trail is required.
 	AuditAllows bool `yaml:"audit_allows"`
+	// MethodScopes maps a full gRPC method to the scopes (any-of) required to
+	// call it. Methods not listed are allowed for any authenticated caller
+	// unless DefaultDeny is set. Health checks are always exempt.
+	MethodScopes map[string][]string `yaml:"method_scopes"`
+	// APIKeyScopes are the scopes granted to API-key principals (JWT callers
+	// carry their own `scope` claim). Empty by default, so API keys can only
+	// call unscoped methods until scopes are granted explicitly.
+	APIKeyScopes []string `yaml:"api_key_scopes"`
+	// DefaultDeny denies any method that has no MethodScopes entry (in addition
+	// to always-exempt health checks). Off by default to preserve
+	// authenticate-only behavior for unlisted methods.
+	DefaultDeny bool `yaml:"default_deny"`
 }
 
 // minJWTSecretBytes is the minimum HMAC-SHA256 key length. 256 bits matches the
@@ -359,6 +375,11 @@ func applyEnvironment(c *Config) error {
 	setString("AUTH_JWT_AUDIENCE", &c.Auth.JWTAudience)
 	setString("AUTH_JWT_ISSUER", &c.Auth.JWTIssuer)
 	err = firstError(err, setBool("AUTH_AUDIT_ALLOWS", &c.Auth.AuditAllows))
+	err = firstError(err, setBool("AUTH_DEFAULT_DENY", &c.Auth.DefaultDeny))
+	if value, ok := os.LookupEnv("AUTH_API_KEY_SCOPES"); ok {
+		c.Auth.APIKeyScopes = splitNonEmpty(value)
+	}
+	err = firstError(err, setInt("SERVER_MAX_IN_FLIGHT_REQUESTS", &c.Server.MaxInFlightRequests))
 	if value, ok := os.LookupEnv("AUTH_API_KEYS"); ok {
 		c.Auth.APIKeys = splitNonEmpty(value)
 	}

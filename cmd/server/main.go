@@ -63,6 +63,7 @@ func run(ctx context.Context, cfg *config.Config) error {
 		return err
 	}
 	logging.Init(cfg.Logging.Level, cfg.Logging.Format)
+	go watchLogLevel(ctx)
 
 	authenticator, err := interceptors.NewAuthenticator(cfg.Auth)
 	if err != nil {
@@ -213,6 +214,37 @@ func run(ctx context.Context, cfg *config.Config) error {
 	return normalizeServeError(runErr)
 }
 
+// watchLogLevel re-reads the config file on SIGHUP and applies ONLY the log
+// level at runtime — an incident-time convenience (zerolog's global level is
+// atomic). It deliberately does not re-wire listeners, pools, limiters, or
+// interceptors; those require a restart.
+func watchLogLevel(ctx context.Context) {
+	ch := make(chan os.Signal, 1)
+	signal.Notify(ch, syscall.SIGHUP)
+	defer signal.Stop(ch)
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ch:
+			configPath := os.Getenv("CONFIG_PATH")
+			if strings.TrimSpace(configPath) == "" {
+				configPath = defaultConfigPath
+			}
+			cfg, err := config.Load(configPath)
+			if err != nil {
+				logging.Logger().Error().Err(err).Msg("SIGHUP: config reload failed")
+				continue
+			}
+			if err := logging.SetLevel(cfg.Logging.Level); err != nil {
+				logging.Logger().Error().Err(err).Str("level", cfg.Logging.Level).Msg("SIGHUP: invalid log level")
+				continue
+			}
+			logging.Logger().Info().Str("level", cfg.Logging.Level).Msg("SIGHUP: log level applied")
+		}
+	}
+}
+
 func openRepository(ctx context.Context, cfg config.StorageConfig) (storage.Repository, error) {
 	var repo storage.Repository
 	switch cfg.Backend {
@@ -267,6 +299,8 @@ func newGRPCServer(cfg *config.Config, authenticator *interceptors.Authenticator
 			unaryRateLimit,
 			interceptors.UnaryAuthInterceptorWithAuthenticator(authenticator),
 			perClientUnary,
+			interceptors.UnaryAuthorizationInterceptor(cfg.Auth.MethodScopes, cfg.Auth.DefaultDeny),
+			interceptors.NewConcurrencyLimitInterceptor(cfg.Server.MaxInFlightRequests),
 			interceptors.UnaryAuditInterceptor,
 			interceptors.UnaryTimeoutInterceptor(cfg.Server.Timeout),
 		),
@@ -278,6 +312,7 @@ func newGRPCServer(cfg *config.Config, authenticator *interceptors.Authenticator
 			streamRateLimit,
 			interceptors.StreamAuthInterceptorWithAuthenticator(authenticator),
 			perClientStream,
+			interceptors.StreamAuthorizationInterceptor(cfg.Auth.MethodScopes, cfg.Auth.DefaultDeny),
 			interceptors.StreamAuditInterceptor,
 			// No StreamTimeoutInterceptor here on purpose: streams are
 			// legitimately long-lived (server events run up to

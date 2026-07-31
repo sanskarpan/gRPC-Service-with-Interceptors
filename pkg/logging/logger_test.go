@@ -111,3 +111,14 @@ func TestLoggerInitLevelFiltering(t *testing.T) {
 		t.Error("error message should appear at error level")
 	}
 }
+
+func TestSetLevel(t *testing.T) {
+	if err := SetLevel("warn"); err != nil {
+		t.Fatalf("SetLevel(warn): %v", err)
+	}
+	if err := SetLevel("not-a-level"); err == nil {
+		t.Fatal("expected error for an invalid level")
+	}
+	// restore a sane default for other tests
+	_ = SetLevel("info")
+}

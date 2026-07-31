@@ -43,7 +43,31 @@ var (
 			Help: "Number of active gRPC streams",
 		},
 	)
+
+	// InFlightRequests reports the number of unary requests currently executing
+	// under the concurrency limiter.
+	InFlightRequests = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "grpc_server_in_flight_requests",
+			Help: "Number of unary requests currently in flight",
+		},
+	)
+
+	// LoadShed counts requests rejected by the in-flight concurrency limiter.
+	LoadShed = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "grpc_server_load_shed_total",
+			Help: "Requests shed because the in-flight concurrency limit was reached",
+		},
+		[]string{"method"},
+	)
 )
+
+// IncLoadShed records one request rejected by the concurrency limiter.
+func IncLoadShed(method string) { LoadShed.WithLabelValues(method).Inc() }
+
+// AddInFlight adjusts the in-flight request gauge by delta (+1 acquire, -1 release).
+func AddInFlight(delta float64) { InFlightRequests.Add(delta) }
 
 // IncTotalRequests records one inbound gRPC request for the method.
 func IncTotalRequests(method string) {

@@ -116,3 +116,30 @@ func TestNewAuthenticatorRejectsNonP256Curve(t *testing.T) {
 		t.Fatal("expected a non-P256 EC key to be rejected at startup")
 	}
 }
+
+func TestExtractScopes(t *testing.T) {
+	raw := func(s string) json.RawMessage { return json.RawMessage(s) }
+	cases := []struct {
+		name   string
+		claims map[string]json.RawMessage
+		want   []string
+	}{
+		{"space-delimited scope", map[string]json.RawMessage{"scope": raw(`"users:read users:write"`)}, []string{"users:read", "users:write"}},
+		{"scp array", map[string]json.RawMessage{"scp": raw(`["a","b"]`)}, []string{"a", "b"}},
+		{"absent", map[string]json.RawMessage{}, nil},
+		{"case-sensitive preserved", map[string]json.RawMessage{"scope": raw(`"Users:Read"`)}, []string{"Users:Read"}},
+	}
+	for _, c := range cases {
+		got := extractScopes(c.claims)
+		if len(got) != len(c.want) {
+			t.Errorf("%s: got %v, want %v", c.name, got, c.want)
+			continue
+		}
+		for i := range got {
+			if got[i] != c.want[i] {
+				t.Errorf("%s: got %v, want %v", c.name, got, c.want)
+				break
+			}
+		}
+	}
+}
