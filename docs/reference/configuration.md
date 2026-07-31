@@ -27,6 +27,7 @@ TLS paths when TLS is enabled.
 | `MTLS_ENABLED` | bool | `false` | no | Require and verify client certs |
 | `AUTH_API_KEYS` | csv | — | one of | Accepted API keys (≥16 chars each) |
 | `JWT_SECRET` | string | — | one of | HS256 secret (≥32 bytes when set) |
+| `JWT_PUBLIC_KEY` | PEM | — | one of | RSA/EC (P-256) public key for RS256/ES256 JWTs |
 | `AUTH_JWT_AUDIENCE` / `AUTH_JWT_ISSUER` | string | — | no | Optional JWT `aud`/`iss` binding |
 | `STORAGE_BACKEND` | enum | `memory` | no | `memory` or `postgres` |
 | `DATABASE_URL` | dsn | — | if postgres | PostgreSQL connection string |
@@ -35,7 +36,9 @@ TLS paths when TLS is enabled.
 | `TRACING_SAMPLE_RATIO` | float | `1.0` | no | Head sampling probability [0,1] |
 
 !!! note "Secrets"
-    At least one of `AUTH_API_KEYS` or `JWT_SECRET` is required. Secrets must be
+    At least one of `AUTH_API_KEYS`, `JWT_SECRET`, or `JWT_PUBLIC_KEY` is
+    required. Prefer `JWT_PUBLIC_KEY` (asymmetric RS256/ES256) in production so
+    the signing key never leaves the issuer. Secrets must be
     injected at runtime; the checked-in config contains no credentials. See the
     [Security model](../operations/security.md).
 

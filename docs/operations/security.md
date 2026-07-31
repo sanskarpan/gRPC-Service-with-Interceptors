@@ -20,6 +20,20 @@ Fail-closed: every method except the Health checks requires a valid credential.
 - **API keys** — compared in constant time; a minimum length is enforced.
 - **HS256 JWT** — signature verified in constant time; `exp`/`nbf`/`iat`
   validated; optional `aud`/`iss` binding; the secret has a 32-byte minimum.
+- **RS256 / ES256 JWT** — asymmetric verification against a configured PEM
+  public key (`auth.jwt_public_key`). The verification path is selected by the
+  token `alg` **and** the configured key type, which blocks the classic
+  algorithm-confusion attack (an HS256 token signed with the public-key bytes is
+  rejected because no HMAC secret is configured). Prefer this in production so
+  the signing key never leaves the issuer.
+
+## Audit logging
+
+Authentication decisions (allow and deny, with client id, method, request id,
+and remote address) and every state-changing RPC (Create/Update/Delete, with the
+terminal status code) are emitted as structured audit records marked
+`audit=true`, so an operator or SIEM can select the audit stream with a single
+field filter. Request payloads are never logged.
 
 ## Secrets
 

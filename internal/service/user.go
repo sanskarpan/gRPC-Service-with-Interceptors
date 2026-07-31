@@ -101,7 +101,7 @@ func (s *UserService) GetUser(ctx context.Context, req *pb.GetUserRequest) (*pb.
 		return nil, err
 	}
 	if req == nil || strings.TrimSpace(req.Id) == "" {
-		return nil, appErrors.ErrInvalidArgument("id is required")
+		return nil, appErrors.ErrInvalidArgument("id is required").WithReason("FIELD_REQUIRED").WithField("id", "must not be empty")
 	}
 	if s.repository == nil {
 		return nil, mapStorageError(storage.ErrUnavailable)
@@ -128,7 +128,7 @@ func (s *UserService) ListUsers(ctx context.Context, req *pb.ListUsersRequest) (
 		return nil, err
 	}
 	if req == nil {
-		return nil, appErrors.ErrInvalidArgument("request is required")
+		return nil, appErrors.ErrInvalidArgument("request is required").WithReason("REQUEST_REQUIRED")
 	}
 	if s.repository == nil {
 		return nil, mapStorageError(storage.ErrUnavailable)
@@ -144,7 +144,7 @@ func (s *UserService) ListUsers(ctx context.Context, req *pb.ListUsersRequest) (
 
 	afterID, err := decodePageToken(req.GetPageToken())
 	if err != nil {
-		return nil, appErrors.ErrInvalidArgument("invalid page_token")
+		return nil, appErrors.ErrInvalidArgument("invalid page_token").WithReason("FIELD_INVALID").WithField("page_token", "is not a valid continuation token")
 	}
 
 	users, next, err := s.repository.List(ctx, size, afterID)
@@ -185,7 +185,7 @@ func (s *UserService) CreateUser(ctx context.Context, req *pb.CreateUserRequest)
 		return nil, err
 	}
 	if req == nil {
-		return nil, appErrors.ErrInvalidArgument("request is required")
+		return nil, appErrors.ErrInvalidArgument("request is required").WithReason("REQUEST_REQUIRED")
 	}
 	name, email, err := validateUserFields(req.Name, req.Email, int(req.Age), s.maxStringBytes)
 	if err != nil {
@@ -228,7 +228,7 @@ func (s *UserService) UpdateUser(ctx context.Context, req *pb.UpdateUserRequest)
 		return nil, err
 	}
 	if req == nil || strings.TrimSpace(req.Id) == "" {
-		return nil, appErrors.ErrInvalidArgument("id is required")
+		return nil, appErrors.ErrInvalidArgument("id is required").WithReason("FIELD_REQUIRED").WithField("id", "must not be empty")
 	}
 	if s.repository == nil {
 		return nil, mapStorageError(storage.ErrUnavailable)
@@ -274,7 +274,7 @@ func (s *UserService) DeleteUser(ctx context.Context, req *pb.DeleteUserRequest)
 		return nil, err
 	}
 	if req == nil || strings.TrimSpace(req.Id) == "" {
-		return nil, appErrors.ErrInvalidArgument("id is required")
+		return nil, appErrors.ErrInvalidArgument("id is required").WithReason("FIELD_REQUIRED").WithField("id", "must not be empty")
 	}
 	if s.repository == nil {
 		return nil, mapStorageError(storage.ErrUnavailable)
@@ -413,24 +413,28 @@ func (s *UserService) validateText(value, field string) error {
 
 func validateUserFields(name, email string, age, maxBytes int) (string, string, error) {
 	if err := validateOptionalText(name, maxBytes, "name"); err != nil || strings.TrimSpace(name) == "" {
-		return "", "", appErrors.ErrInvalidArgument("name is required")
+		return "", "", appErrors.ErrInvalidArgument("name is required").
+			WithReason("FIELD_REQUIRED").WithField("name", "must not be empty")
 	}
 	if err := validateOptionalText(email, maxBytes, "email"); err != nil {
 		return "", "", err
 	}
 	normalizedEmail, err := parseEmail(email)
 	if err != nil {
-		return "", "", appErrors.ErrInvalidArgument("email is invalid")
+		return "", "", appErrors.ErrInvalidArgument("email is invalid").
+			WithReason("FIELD_INVALID").WithField("email", "must be a valid email address")
 	}
 	if age < 0 || age > 150 {
-		return "", "", appErrors.ErrInvalidArgument("age must be between 0 and 150")
+		return "", "", appErrors.ErrInvalidArgument("age must be between 0 and 150").
+			WithReason("FIELD_OUT_OF_RANGE").WithField("age", "must be between 0 and 150")
 	}
 	return strings.TrimSpace(name), normalizedEmail, nil
 }
 
 func validateOptionalText(value string, maxBytes int, field string) error {
 	if value != "" && (len(value) > maxBytes || strings.TrimSpace(value) == "") {
-		return appErrors.ErrInvalidArgument(field + " is invalid")
+		return appErrors.ErrInvalidArgument(field+" is invalid").
+			WithReason("FIELD_INVALID").WithField(field, "is blank or exceeds the maximum length")
 	}
 	return nil
 }
@@ -469,14 +473,14 @@ func mapStorageError(err error) error {
 	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
 		return err
 	case errors.Is(err, storage.ErrNotFound):
-		return appErrors.ErrNotFound("user not found")
+		return appErrors.ErrNotFound("user not found").WithReason("USER_NOT_FOUND")
 	case errors.Is(err, storage.ErrCapacity):
-		return appErrors.ErrResourceExhausted("user capacity reached")
+		return appErrors.ErrResourceExhausted("user capacity reached").WithReason("USER_CAPACITY_REACHED")
 	case errors.Is(err, storage.ErrAlreadyExists):
-		return appErrors.ErrAlreadyExists("user already exists")
+		return appErrors.ErrAlreadyExists("user already exists").WithReason("USER_ALREADY_EXISTS")
 	case errors.Is(err, storage.ErrInvalid):
-		return appErrors.ErrInvalidArgument("user data is invalid")
+		return appErrors.ErrInvalidArgument("user data is invalid").WithReason("INVALID_USER_DATA")
 	default:
-		return appErrors.ErrUnavailable("storage temporarily unavailable")
+		return appErrors.ErrUnavailable("storage temporarily unavailable").WithReason("STORAGE_UNAVAILABLE")
 	}
 }

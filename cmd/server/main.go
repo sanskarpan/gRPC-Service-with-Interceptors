@@ -267,6 +267,7 @@ func newGRPCServer(cfg *config.Config, authenticator *interceptors.Authenticator
 			unaryRateLimit,
 			interceptors.UnaryAuthInterceptorWithAuthenticator(authenticator),
 			perClientUnary,
+			interceptors.UnaryAuditInterceptor,
 			interceptors.UnaryTimeoutInterceptor(cfg.Server.Timeout),
 		),
 		grpc.ChainStreamInterceptor(
@@ -277,6 +278,7 @@ func newGRPCServer(cfg *config.Config, authenticator *interceptors.Authenticator
 			streamRateLimit,
 			interceptors.StreamAuthInterceptorWithAuthenticator(authenticator),
 			perClientStream,
+			interceptors.StreamAuditInterceptor,
 			// No StreamTimeoutInterceptor here on purpose: streams are
 			// legitimately long-lived (server events run up to
 			// MaxStreamMessages * StreamInterval). The per-stream message cap

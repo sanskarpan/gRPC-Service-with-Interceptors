@@ -73,6 +73,16 @@ type AuthConfig struct {
 	// aud/iss claims. Empty means the corresponding claim is not checked.
 	JWTAudience string `yaml:"jwt_audience"`
 	JWTIssuer   string `yaml:"jwt_issuer"`
+	// JWTPublicKey is a PEM-encoded RSA or EC (P-256) public key. When set, the
+	// server also accepts asymmetric RS256/ES256 JWTs verified against it (in
+	// addition to HS256 when jwt_secret is set). Prefer this over a shared HS256
+	// secret in production so the signing key never leaves the issuer.
+	JWTPublicKey string `yaml:"jwt_public_key"`
+	// AuditAllows, when true, additionally emits an audit record for every
+	// successful authentication (not just denials). Off by default because it is
+	// one record per authenticated request; enable it when a full
+	// who-accessed-what trail is required.
+	AuditAllows bool `yaml:"audit_allows"`
 }
 
 // minJWTSecretBytes is the minimum HMAC-SHA256 key length. 256 bits matches the
@@ -220,11 +230,14 @@ func (c *Config) Validate() error {
 	if c.TLS.MTLS.Enabled && !c.TLS.Enabled {
 		return fmt.Errorf("tls.mtls.enabled requires tls.enabled")
 	}
-	if strings.TrimSpace(c.Auth.JWTSecret) == "" && len(c.Auth.APIKeys) == 0 {
-		return fmt.Errorf("at least one auth.jwt_secret or auth.api_keys entry is required")
+	if strings.TrimSpace(c.Auth.JWTSecret) == "" && len(c.Auth.APIKeys) == 0 && strings.TrimSpace(c.Auth.JWTPublicKey) == "" {
+		return fmt.Errorf("at least one of auth.jwt_secret, auth.jwt_public_key, or auth.api_keys is required")
 	}
 	if s := c.Auth.JWTSecret; s != "" && len(s) < minJWTSecretBytes {
 		return fmt.Errorf("auth.jwt_secret must be at least %d bytes", minJWTSecretBytes)
+	}
+	if pk := strings.TrimSpace(c.Auth.JWTPublicKey); pk != "" && !strings.Contains(pk, "-----BEGIN") {
+		return fmt.Errorf("auth.jwt_public_key must be a PEM-encoded public key")
 	}
 	for i, key := range c.Auth.APIKeys {
 		if len(key) < 16 {
@@ -342,6 +355,10 @@ func applyEnvironment(c *Config) error {
 	err = firstError(err, setBool("MTLS_ENABLED", &c.TLS.MTLS.Enabled))
 	setString("MTLS_CLIENT_CA_FILE", &c.TLS.MTLS.ClientCAFile)
 	setString("JWT_SECRET", &c.Auth.JWTSecret)
+	setString("JWT_PUBLIC_KEY", &c.Auth.JWTPublicKey)
+	setString("AUTH_JWT_AUDIENCE", &c.Auth.JWTAudience)
+	setString("AUTH_JWT_ISSUER", &c.Auth.JWTIssuer)
+	err = firstError(err, setBool("AUTH_AUDIT_ALLOWS", &c.Auth.AuditAllows))
 	if value, ok := os.LookupEnv("AUTH_API_KEYS"); ok {
 		c.Auth.APIKeys = splitNonEmpty(value)
 	}
