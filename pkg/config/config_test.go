@@ -1086,3 +1086,31 @@ func TestApplyEnvironmentCircuitBreaker(t *testing.T) {
 		t.Fatal("circuit_breaker env override not applied")
 	}
 }
+
+func TestValidateAcceptsPublicKeyAsCredential(t *testing.T) {
+	cfg := validBaseConfig()
+	cfg.Auth.JWTSecret = ""
+	cfg.Auth.APIKeys = nil
+	cfg.Auth.JWTPublicKey = "-----BEGIN PUBLIC KEY-----\nMFkw...\n-----END PUBLIC KEY-----"
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("a JWT public key should satisfy the credential requirement: %v", err)
+	}
+}
+
+func TestValidateRejectsNonPEMPublicKey(t *testing.T) {
+	cfg := validBaseConfig()
+	cfg.Auth.JWTPublicKey = "not-a-pem-key"
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("expected error for a non-PEM jwt_public_key")
+	}
+}
+
+func TestValidateRejectsNoCredentialsAtAll(t *testing.T) {
+	cfg := validBaseConfig()
+	cfg.Auth.JWTSecret = ""
+	cfg.Auth.APIKeys = nil
+	cfg.Auth.JWTPublicKey = ""
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("expected error when no credentials are configured")
+	}
+}

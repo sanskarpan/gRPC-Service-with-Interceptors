@@ -2,11 +2,18 @@ package interceptors
 
 import (
 	"context"
+	"crypto"
+	"crypto/ecdsa"
+	"crypto/elliptic"
 	"crypto/hmac"
+	"crypto/rsa"
 	"crypto/sha256"
+	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
+	"encoding/pem"
 	"fmt"
+	"math/big"
 	"strconv"
 	"strings"
 	"time"
@@ -32,30 +39,76 @@ func extractClientID(ctx context.Context) string {
 	return ""
 }
 
-// Authenticator verifies API keys and compact HMAC-SHA256 JWTs at the gRPC boundary.
+// Authenticator verifies API keys and compact JWTs (HS256 with a shared secret,
+// or RS256/ES256 against a configured PEM public key) at the gRPC boundary.
+// The verification path is selected by the token's alg AND the configured key
+// type, so a token cannot use HS256 to trick an asymmetric public key into being
+// treated as an HMAC secret (the classic algorithm-confusion attack).
 type Authenticator struct {
 	jwtSecret   []byte
 	apiKeys     [][]byte
 	jwtAudience string
 	jwtIssuer   string
+	jwtRSAKey   *rsa.PublicKey
+	jwtECKey    *ecdsa.PublicKey
+	auditAllows bool
 }
+
+// minRSABits is the smallest RSA modulus accepted as a JWT trust anchor. A key
+// weaker than 2048 bits is a forgeable anchor and is rejected at startup.
+const minRSABits = 2048
 
 // NewAuthenticator builds a verifier from already validated configuration.
 func NewAuthenticator(cfg config.AuthConfig) (*Authenticator, error) {
-	if strings.TrimSpace(cfg.JWTSecret) == "" && len(cfg.APIKeys) == 0 {
+	if strings.TrimSpace(cfg.JWTSecret) == "" && len(cfg.APIKeys) == 0 && strings.TrimSpace(cfg.JWTPublicKey) == "" {
 		return nil, fmt.Errorf("no authentication credentials configured")
 	}
 	auth := &Authenticator{
 		jwtSecret:   []byte(cfg.JWTSecret),
 		jwtAudience: cfg.JWTAudience,
 		jwtIssuer:   cfg.JWTIssuer,
+		auditAllows: cfg.AuditAllows,
 	}
 	for _, key := range cfg.APIKeys {
 		if strings.TrimSpace(key) != "" {
 			auth.apiKeys = append(auth.apiKeys, []byte(key))
 		}
 	}
+	if strings.TrimSpace(cfg.JWTPublicKey) != "" {
+		switch key := parsePublicKey(cfg.JWTPublicKey).(type) {
+		case *rsa.PublicKey:
+			if key.N.BitLen() < minRSABits {
+				return nil, fmt.Errorf("auth.jwt_public_key RSA modulus must be at least %d bits", minRSABits)
+			}
+			auth.jwtRSAKey = key
+		case *ecdsa.PublicKey:
+			// verifySignature only supports ES256 (P-256); reject other curves
+			// at startup rather than starting up broken (every token failing).
+			if key.Curve != elliptic.P256() {
+				return nil, fmt.Errorf("auth.jwt_public_key EC key must use the P-256 curve (ES256)")
+			}
+			auth.jwtECKey = key
+		default:
+			return nil, fmt.Errorf("auth.jwt_public_key must be a PEM-encoded RSA or EC (P-256) public key")
+		}
+	}
 	return auth, nil
+}
+
+// parsePublicKey decodes a PEM public key (PKIX/SPKI, or a PKCS#1 RSA key) and
+// returns the crypto.PublicKey, or nil if it cannot be parsed.
+func parsePublicKey(pemKey string) crypto.PublicKey {
+	block, _ := pem.Decode([]byte(pemKey))
+	if block == nil {
+		return nil
+	}
+	if pub, err := x509.ParsePKIXPublicKey(block.Bytes); err == nil {
+		return pub
+	}
+	if pub, err := x509.ParsePKCS1PublicKey(block.Bytes); err == nil {
+		return pub
+	}
+	return nil
 }
 
 // Authenticate validates the credential in ctx without exposing details.
@@ -114,10 +167,38 @@ func (a *Authenticator) jwtSubject(token string) string {
 	return sub
 }
 
-func (a *Authenticator) validJWT(token string) bool {
-	if len(a.jwtSecret) == 0 {
+// verifySignature validates the JWT signature for the given alg using ONLY the
+// key material configured for that algorithm class. An unconfigured alg fails
+// closed, which blocks algorithm-confusion attacks (e.g. an HS256 token signed
+// with the RSA public key bytes).
+func (a *Authenticator) verifySignature(alg, signingInput string, sig []byte) bool {
+	digest := sha256.Sum256([]byte(signingInput))
+	switch alg {
+	case "HS256":
+		if len(a.jwtSecret) == 0 {
+			return false
+		}
+		mac := hmac.New(sha256.New, a.jwtSecret)
+		_, _ = mac.Write([]byte(signingInput))
+		return hmac.Equal(sig, mac.Sum(nil))
+	case "RS256":
+		if a.jwtRSAKey == nil {
+			return false
+		}
+		return rsa.VerifyPKCS1v15(a.jwtRSAKey, crypto.SHA256, digest[:], sig) == nil
+	case "ES256":
+		if a.jwtECKey == nil || a.jwtECKey.Curve != elliptic.P256() || len(sig) != 64 {
+			return false
+		}
+		r := new(big.Int).SetBytes(sig[:32])
+		s := new(big.Int).SetBytes(sig[32:])
+		return ecdsa.Verify(a.jwtECKey, digest[:], r, s)
+	default:
 		return false
 	}
+}
+
+func (a *Authenticator) validJWT(token string) bool {
 	parts := strings.Split(token, ".")
 	if len(parts) != 3 {
 		return false
@@ -127,16 +208,15 @@ func (a *Authenticator) validJWT(token string) bool {
 		return false
 	}
 	var header map[string]string
-	if err := json.Unmarshal(headerBytes, &header); err != nil || header["alg"] != "HS256" || (header["typ"] != "" && header["typ"] != "JWT") {
+	if err := json.Unmarshal(headerBytes, &header); err != nil || (header["typ"] != "" && header["typ"] != "JWT") {
 		return false
 	}
 	signingInput := parts[0] + "." + parts[1]
-	mac := hmac.New(sha256.New, a.jwtSecret)
-	if _, err := mac.Write([]byte(signingInput)); err != nil {
+	sig, err := base64.RawURLEncoding.DecodeString(parts[2])
+	if err != nil {
 		return false
 	}
-	expected, err := base64.RawURLEncoding.DecodeString(parts[2])
-	if err != nil || !hmac.Equal(expected, mac.Sum(nil)) {
+	if !a.verifySignature(header["alg"], signingInput, sig) {
 		return false
 	}
 	payloadBytes, err := base64.RawURLEncoding.DecodeString(parts[1])
@@ -248,9 +328,14 @@ func UnaryAuthInterceptorWithAuthenticator(auth *Authenticator) grpc.UnaryServer
 	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
 		if requiresAuth(info.FullMethod) {
 			if auth == nil || !auth.authenticateCredential(ctx) {
+				auditAuthDecision(ctx, info.FullMethod, "deny", "")
 				return nil, authenticationError()
 			}
-			ctx = withClientID(ctx, auth.clientID(ctx))
+			clientID := auth.clientID(ctx)
+			ctx = withClientID(ctx, clientID)
+			if auth.auditAllows {
+				auditAuthDecision(ctx, info.FullMethod, "allow", clientID)
+			}
 		}
 		return handler(ctx, req)
 	}
@@ -267,9 +352,14 @@ func StreamAuthInterceptorWithAuthenticator(auth *Authenticator) grpc.StreamServ
 	return func(srv interface{}, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
 		if requiresAuth(info.FullMethod) {
 			if auth == nil || !auth.authenticateCredential(ss.Context()) {
+				auditAuthDecision(ss.Context(), info.FullMethod, "deny", "")
 				return authenticationError()
 			}
-			ctx := withClientID(ss.Context(), auth.clientID(ss.Context()))
+			clientID := auth.clientID(ss.Context())
+			ctx := withClientID(ss.Context(), clientID)
+			if auth.auditAllows {
+				auditAuthDecision(ctx, info.FullMethod, "allow", clientID)
+			}
 			return handler(srv, &wrappedServerStream{ServerStream: ss, ctx: ctx})
 		}
 		return handler(srv, ss)
