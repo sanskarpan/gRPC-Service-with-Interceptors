@@ -54,19 +54,20 @@ func auditMutation(ctx context.Context, method, code string, dur time.Duration) 
 	logger.Info().Msg("audit: mutation")
 }
 
-// auditAuthDecision records an authentication decision. Denials are the primary
-// security signal; allows give a full who-accessed-what trail.
-func auditAuthDecision(ctx context.Context, method, decision, clientID string) {
+// auditAuthDecision records an authentication (event="authn") or authorization
+// (event="authz") decision. Denials are the primary security signal; allows
+// give a full who-accessed-what trail.
+func auditAuthDecision(ctx context.Context, event, method, decision, clientID string) {
 	logger := logging.With().
 		Bool("audit", true).
-		Str("event", "authn").
+		Str("event", event).
 		Str("decision", decision).
 		Str("method", method).
 		Str("client_id", clientID).
 		Str("request_id", getRequestID(ctx)).
 		Str("remote_addr", remoteAddr(ctx)).
 		Logger()
-	logger.Info().Msg("audit: authn")
+	logger.Info().Msg("audit: " + event)
 }
 
 // UnaryAuditInterceptor writes an audit record for every mutating unary RPC,
