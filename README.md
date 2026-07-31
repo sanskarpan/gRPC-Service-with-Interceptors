@@ -8,20 +8,25 @@ reproducible development/deployment tooling.
 
 ## Walkthrough
 
-A full end-to-end walkthrough — starting the authenticated server, health and
-readiness probes, the example client driving unary + streaming RPCs, Prometheus
-metrics, and **Signal**, the request-builder console:
+A full server-side walkthrough — starting the authenticated server, health and
+readiness probes, the example client driving unary + streaming RPCs, and
+Prometheus metrics:
 
-[![Project walkthrough](docs/assets/walkthrough.gif)](docs/assets/walkthrough.mp4)
+[![Server walkthrough](docs/assets/walkthrough.gif)](docs/assets/walkthrough.mp4)
 
-**[Watch the full-quality MP4](docs/assets/walkthrough.mp4)** (terminal + UI, ~44s).
-Reproduce the terminal part with `./scripts/demo/run.sh` (or
+**[Watch the full-quality MP4](docs/assets/walkthrough.mp4)** (terminal, ~44s).
+Reproduce it with `./scripts/demo/run.sh` (or
 `go build -o bin/server ./cmd/server && go build -o bin/client ./cmd/client`).
 
 ### Signal — the request-builder console
 
 A precision console for the UserService: browse methods, compose requests, and
-inspect unary and streaming responses.
+inspect unary and streaming responses. This end-to-end capture drives a unary
+`GetUser`, a `CreateUser` mutation, and a server-streaming `StreamUserEvents`:
+
+[![Signal console walkthrough](docs/assets/ui-walkthrough.gif)](docs/assets/ui-walkthrough.mp4)
+
+**[Watch the full-quality MP4](docs/assets/ui-walkthrough.mp4)** (~23s).
 
 | Method browser + JSON editor | Unary create, `200 OK` |
 | --- | --- |
@@ -29,9 +34,10 @@ inspect unary and streaming responses.
 | **Server-streaming events** | |
 | ![Streaming events](docs/assets/ui-stream.png) | |
 
-The browser console is an intentional demo-mode request builder (it simulates
-responses locally); the real gRPC traffic in the walkthrough is server-to-client.
-See [Frontend](#frontend).
+The browser console is an intentional demo-mode request builder: it simulates
+responses locally so the UI runs without a browser-gRPC gateway. The
+server-to-client gRPC traffic is exercised in the terminal walkthrough above and
+by the full E2E test suite. See [Frontend](#frontend).
 
 ## System map
 
