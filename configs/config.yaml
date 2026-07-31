@@ -14,6 +14,9 @@ server:
   rate_limit_burst: 200
   per_client_rate_limit_per_second: 50
   per_client_rate_limit_burst: 100
+  # Load shedding: bound concurrent unary requests (0 disables). Size relative
+  # to storage.max_open_conns since the goal is to protect the database.
+  max_in_flight_requests: 0
 
 tls:
   enabled: true
@@ -29,6 +32,21 @@ tls:
 auth:
   jwt_secret: ""
   api_keys: []
+  # Optional PEM RSA/EC(P-256) public key for asymmetric RS256/ES256 JWTs.
+  jwt_public_key: ""
+  # Scope-based authorization (any-of). Methods not listed are allowed for any
+  # authenticated caller unless default_deny is true; health checks are always
+  # exempt. JWT callers carry a `scope` claim; API keys use api_key_scopes.
+  default_deny: false
+  api_key_scopes: []
+  method_scopes: {}
+  #   "/example.v1.UserService/GetUser":    ["users:read"]
+  #   "/example.v1.UserService/ListUsers":  ["users:read"]
+  #   "/example.v1.UserService/CreateUser": ["users:write"]
+  #   "/example.v1.UserService/UpdateUser": ["users:write"]
+  #   "/example.v1.UserService/DeleteUser": ["users:write"]
+  # Emit an audit record on every successful auth (not just denials):
+  audit_allows: false
 
 logging:
   level: "info"
