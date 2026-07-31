@@ -56,6 +56,18 @@ func Init(level, format string) {
 	logger.Store(&l)
 }
 
+// SetLevel changes the global log level at runtime (e.g. on SIGHUP during an
+// incident) without re-initializing the logger. zerolog's global level is
+// atomic, so this is safe to call concurrently with logging.
+func SetLevel(level string) error {
+	lvl, err := zerolog.ParseLevel(level)
+	if err != nil {
+		return err
+	}
+	zerolog.SetGlobalLevel(lvl)
+	return nil
+}
+
 // With starts a structured logging context from the configured logger.
 func With() zerolog.Context {
 	return Logger().With()
