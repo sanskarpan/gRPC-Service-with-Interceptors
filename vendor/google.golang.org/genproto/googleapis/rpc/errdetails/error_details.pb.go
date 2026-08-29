@@ -1240,29 +1240,26 @@ func file_google_rpc_error_details_proto_rawDescGZIP() []byte {
 	return file_google_rpc_error_details_proto_rawDescData
 }
 
-var (
-	file_google_rpc_error_details_proto_msgTypes = make([]protoimpl.MessageInfo, 16)
-	file_google_rpc_error_details_proto_goTypes  = []interface{}{
-		(*ErrorInfo)(nil),                     // 0: google.rpc.ErrorInfo
-		(*RetryInfo)(nil),                     // 1: google.rpc.RetryInfo
-		(*DebugInfo)(nil),                     // 2: google.rpc.DebugInfo
-		(*QuotaFailure)(nil),                  // 3: google.rpc.QuotaFailure
-		(*PreconditionFailure)(nil),           // 4: google.rpc.PreconditionFailure
-		(*BadRequest)(nil),                    // 5: google.rpc.BadRequest
-		(*RequestInfo)(nil),                   // 6: google.rpc.RequestInfo
-		(*ResourceInfo)(nil),                  // 7: google.rpc.ResourceInfo
-		(*Help)(nil),                          // 8: google.rpc.Help
-		(*LocalizedMessage)(nil),              // 9: google.rpc.LocalizedMessage
-		nil,                                   // 10: google.rpc.ErrorInfo.MetadataEntry
-		(*QuotaFailure_Violation)(nil),        // 11: google.rpc.QuotaFailure.Violation
-		nil,                                   // 12: google.rpc.QuotaFailure.Violation.QuotaDimensionsEntry
-		(*PreconditionFailure_Violation)(nil), // 13: google.rpc.PreconditionFailure.Violation
-		(*BadRequest_FieldViolation)(nil),     // 14: google.rpc.BadRequest.FieldViolation
-		(*Help_Link)(nil),                     // 15: google.rpc.Help.Link
-		(*durationpb.Duration)(nil),           // 16: google.protobuf.Duration
-	}
-)
-
+var file_google_rpc_error_details_proto_msgTypes = make([]protoimpl.MessageInfo, 16)
+var file_google_rpc_error_details_proto_goTypes = []interface{}{
+	(*ErrorInfo)(nil),                     // 0: google.rpc.ErrorInfo
+	(*RetryInfo)(nil),                     // 1: google.rpc.RetryInfo
+	(*DebugInfo)(nil),                     // 2: google.rpc.DebugInfo
+	(*QuotaFailure)(nil),                  // 3: google.rpc.QuotaFailure
+	(*PreconditionFailure)(nil),           // 4: google.rpc.PreconditionFailure
+	(*BadRequest)(nil),                    // 5: google.rpc.BadRequest
+	(*RequestInfo)(nil),                   // 6: google.rpc.RequestInfo
+	(*ResourceInfo)(nil),                  // 7: google.rpc.ResourceInfo
+	(*Help)(nil),                          // 8: google.rpc.Help
+	(*LocalizedMessage)(nil),              // 9: google.rpc.LocalizedMessage
+	nil,                                   // 10: google.rpc.ErrorInfo.MetadataEntry
+	(*QuotaFailure_Violation)(nil),        // 11: google.rpc.QuotaFailure.Violation
+	nil,                                   // 12: google.rpc.QuotaFailure.Violation.QuotaDimensionsEntry
+	(*PreconditionFailure_Violation)(nil), // 13: google.rpc.PreconditionFailure.Violation
+	(*BadRequest_FieldViolation)(nil),     // 14: google.rpc.BadRequest.FieldViolation
+	(*Help_Link)(nil),                     // 15: google.rpc.Help.Link
+	(*durationpb.Duration)(nil),           // 16: google.protobuf.Duration
+}
 var file_google_rpc_error_details_proto_depIdxs = []int32{
 	10, // 0: google.rpc.ErrorInfo.metadata:type_name -> google.rpc.ErrorInfo.MetadataEntry
 	16, // 1: google.rpc.RetryInfo.retry_delay:type_name -> google.protobuf.Duration
